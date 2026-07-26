@@ -1,0 +1,105 @@
+name: CI — MCP smoke tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build-dev-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch caching)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.dev
+          push: false
+          tags: fw-analyst-dev:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: build-dev-image
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest openpyxl
+          pip install -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
+            -e intake_mcp/ -e zone_mcp/ -e planner/ -e fwanalyst_server/
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/
+
+  smoke-tests:
+    runs-on: ubuntu-latest
+    needs: build-dev-image
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start services via docker-compose (CI)
+        run: |
+          docker build -f Dockerfile.dev -t fw-analyst-dev:latest .
+          docker compose -f docker-compose.ci.yml up -d
+
+      - name: Wait for readiness and run smoke tests
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+
+          for i in {1..30}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 -X POST http://localhost:8000/mcp 2>/dev/null || true)
+            if [ "$code" = "401" ]; then
+              echo "fwanalyst server appears ready (auth enforced)"
+              break
+            fi
+            echo "Waiting for fwanalyst server... attempt $i (got HTTP $code)"
+            sleep 2
+          done
+
+          export FW_ANALYST_TOKEN=ci-smoke-token
+          python3 scripts/run_smoke.py || rc=$?
+          scripts/smoke-test.sh || rc=$?
+          rc=${rc:-0}
+
+          if [ $rc -ne 0 ]; then
+            docker compose -f docker-compose.ci.yml logs --no-color > ci-logs/compose.log || true
+            echo "--- docker-compose logs ---" && cat ci-logs/compose.log || true
+            exit $rc
+          fi
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.ci.yml down || true
+
+      - name: Upload ci-logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: ci-logs/**

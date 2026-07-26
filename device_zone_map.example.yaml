@@ -1,0 +1,62 @@
+# device_zone_map.example.yaml
+# Maps FortiGate interface names (per-device) to 4THealth policy zone names.
+#
+# PURPOSE: Bridges the gap between FortiManager interface names (e.g. "port3")
+# and the 4THealth zone policy names (e.g. "NSS OT-All") used by zone_mcp.
+# Without this file, get_interface_map() returns policy_zone: null for every
+# interface and emits zone_map_warnings listing the unmapped entries.
+#
+# HOW TO USE:
+#   1. Copy this file to device_zone_map.yaml in the repo root.
+#   2. Replace the example entries with your actual devices and interfaces.
+#      Use get_devices() and get_interface_map() to enumerate them.
+#   3. For each interface, set policy_zone to the matching 4THealth zone name
+#      (must exactly match a zone name returned by zone_mcp.get_zones()).
+#   4. Optionally run: python scripts/import_zone_map.py  (when available)
+#      to auto-populate entries from FortiManager data.
+#
+# NOTE: device_zone_map.yaml is gitignored (it may contain internal device/
+# interface names). Only this .example file is version-controlled.
+
+devices:
+  "FGT-OT-SITE1":
+    "port1":
+      alias: "WAN_UPLINK"
+      policy_zone: "Internet"
+      notes: ""
+    "port3":
+      alias: "OT_LAN"
+      policy_zone: "NSS OT-All"
+      notes: ""
+    "port4":
+      alias: "OT_MGMT"
+      policy_zone: "NSS OT Mgmt"
+      notes: "Management VLAN for OT devices"
+
+  "FGT-GAS-DENVER":
+    "port1":
+      alias: "WAN_UPLINK"
+      policy_zone: "Internet"
+      notes: ""
+    "port2":
+      alias: "GAS_SCADA"
+      policy_zone: "NSS Gas-SCADA"
+      notes: ""
+    "port3":
+      alias: "GAS_FW_NETS"
+      policy_zone: "NSS Gas-FW nets"
+      notes: ""
+
+  "FGT-IT-DATACENTER":
+    "port1":
+      alias: "WAN_UPLINK"
+      policy_zone: "Internet"
+      notes: ""
+    "port2":
+      alias: "IT_CORP"
+      policy_zone: "NSS IT Corporate (non-user)"
+      notes: ""
+    "port3":
+      alias: "IT_DMZ"
+      policy_zone: "NSS IT DMZ"
+      notes: "External-facing DMZ segment"

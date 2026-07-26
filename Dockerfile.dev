@@ -1,0 +1,38 @@
+FROM python:3.11-slim
+
+# Minimal tooling for running MCP servers
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1
+WORKDIR /opt/fw-analyst
+
+# Install uv and editable packages
+COPY standards_mcp/ standards_mcp/
+COPY fortimanager_mcp/ fortimanager_mcp/
+COPY feedback_mcp/ feedback_mcp/
+COPY intake_mcp/ intake_mcp/
+COPY zone_mcp/ zone_mcp/
+COPY planner/ planner/
+COPY fwanalyst_server/ fwanalyst_server/
+COPY scripts/ scripts/
+# Note: standards_mcp/policy_db.json and standards_mcp/policy-data/ (real
+# TUFIN CSV exports) are gitignored and not shipped in this repo — the
+# COPY standards_mcp/ standards_mcp/ line above already picks them up if
+# present locally, and no-ops harmlessly if they're absent (e.g. a fresh
+# clone or CI). Do not add an explicit COPY for that subpath — it fails the
+# build outright when the path doesn't exist, unlike a directory copy that's
+# just missing some of its usual contents.
+
+RUN python -m pip install --upgrade pip setuptools wheel
+RUN python -m pip install uv
+RUN python -m pip install -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ -e intake_mcp/ -e zone_mcp/ \
+    -e planner/ -e fwanalyst_server/
+
+EXPOSE 8000
+
+# Default: print help — docker-compose will override with the server command
+CMD ["/bin/sh","-c","echo 'FW-Analyst dev image ready' && sleep infinity"]

@@ -1,0 +1,19 @@
+services:
+  fwanalyst:
+    image: fw-analyst-dev:latest
+    container_name: fw_analyst
+    working_dir: /opt/fw-analyst
+    command: python -m fwanalyst_server
+    environment:
+      MCP_TRANSPORT: http
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8000"
+      FW_ANALYST_TOKEN: ${FW_ANALYST_TOKEN:-dev-local-token}
+    ports:
+      - 8000:8000
+    volumes:
+      - ./:/opt/fw-analyst:cached
+
+# Note: the container mounts the repo so local edits are visible; for CI use
+# docker-compose.ci.yml (built image, no mounts). The per-package servers can
+# still be run individually over stdio for debugging: python -m zone_mcp etc.

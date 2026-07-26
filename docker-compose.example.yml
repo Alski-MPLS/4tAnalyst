@@ -1,0 +1,29 @@
+# Example docker-compose for local development. This is intentionally minimal
+# and meant as a starting point — images must be prepared with uv and app deps.
+# Each service mounts the repo and runs the uv/mcp command shown in Installation.
+
+version: '3.8'
+services:
+  standards:
+    image: python:3.11-slim
+    container_name: fw_standards
+    working_dir: /opt/fw-analyst
+    volumes:
+      - ./:/opt/fw-analyst:cached
+    command: sh -c "uv pip install -e standards_mcp/ && uv run mcp run standards_mcp/server.py --transport sse --port 8000"
+    ports:
+      - 8000:8000
+
+  fortimanager:
+    image: python:3.11-slim
+    container_name: fw_fortimanager
+    working_dir: /opt/fw-analyst
+    volumes:
+      - ./:/opt/fw-analyst:cached
+    command: sh -c "uv pip install -e fortimanager_mcp/ && uv run mcp run fortimanager_mcp/server.py --transport sse --port 8001"
+    ports:
+      - 8001:8001
+
+# Add feedback, intake, zone services similarly if desired.
+# Note: This example installs packages at container startup; for faster dev
+# builds produce a custom image that has uv and dependencies preinstalled.

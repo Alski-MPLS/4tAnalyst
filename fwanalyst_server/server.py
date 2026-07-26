@@ -1,0 +1,167 @@
+"""
+Unified FW-Analyst MCP server.
+
+Aggregates every read-only tool from the five per-domain packages onto one
+FastMCP instance and adds plan_change — the deterministic change planner.
+The per-package servers remain runnable individually for stdio development;
+this is the production entry point (see __main__.py for transport/auth).
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+
+logger = logging.getLogger(__name__)
+
+mcp = FastMCP(
+    name="fw-analyst",
+    instructions=(
+        "FW-Analyst unified server. For firewall change requests, prefer the "
+        "plan_change tool: it computes the zone verdict, existing-rule "
+        "coverage, object reuse, rule insertion point, and FortiGate CLI "
+        "deterministically — relay its output verbatim, never recompute or "
+        "edit it. The other tools are read-only lookups for ad-hoc questions. "
+        "zone_* tools query the live 4THealth API (authoritative for "
+        "verdicts); standards check_traffic uses static TUFIN-era data — do "
+        "not use it for verdicts."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# plan_change — the deterministic planner
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def plan_change(
+    src: str,
+    dst: str,
+    service: str,
+    firewalls: list[str],
+    justification: str = "",
+    ticket_id: str = "",
+    src_group: str = "",
+    dst_group: str = "",
+) -> dict[str, Any]:
+    """
+    Compute a complete, deterministic firewall change plan for one
+    consolidated request (single or multiple values per field).
+
+    This is the primary tool for /analyze-request. Call it ONCE per request
+    — pass ALL sources, destinations, and services together; the engine
+    plans one policy per firewall covering every combination. It performs
+    ALL analysis in tested code: 4THealth zone verdict per combination,
+    FortiManager existing-rule search (set semantics), object reuse vs.
+    create, auto-grouping, rule insertion point (first-match shadowing
+    analysis), naming/logging standards, approval chain, and exact
+    FortiGate CLI.
+
+    Parameters
+    ----------
+    src           : Source IP(s)/CIDR(s), comma-separated for multiple
+                    (e.g. "10.1.2.3" or "10.1.2.3, 10.1.2.4")
+    dst           : Destination IP(s)/CIDR(s), comma-separated for multiple
+    service       : Port(s), proto/port, or well-known names, comma-separated
+                    ("443", "tcp/8443, tcp/22", "ssh")
+    firewalls     : Target firewalls as "DEVICE:ADOM" strings
+                    (e.g. ["MNHQ-FW01:OT-ADOM"]). The engineer names these;
+                    path is never auto-discovered.
+    justification : Business justification from the request
+    ticket_id     : Change ticket ID if known
+    src_group     : Optional name for a source address group — forces the
+                    sources into a group even below the auto-group threshold
+    dst_group     : Optional name for a destination address group
+
+    Mixed zone verdicts (some combinations ALLOWED, some BLOCKED) return an
+    error telling the engineer to split the request — relay it verbatim.
+
+    Returns the render_report.py payload (request, zone_verdict,
+    existing_rules, naming, logging, approval, recommendation, cli) plus a
+    top-level "warnings" list. Present it verbatim: do not recompute
+    verdicts, rename objects, or edit CLI text. If warnings mention degraded
+    FortiManager data, lead with that when presenting.
+    """
+    from planner.engine import plan_change as _plan, to_report_payload
+    from planner.models import PlannerDataError, TargetFirewall
+
+    targets = []
+    for raw in firewalls:
+        device, sep, adom = raw.partition(":")
+        if not sep or not device or not adom:
+            return {"error": f"firewalls entries must be 'DEVICE:ADOM', got {raw!r}"}
+        targets.append(TargetFirewall(device=device, adom=adom))
+
+    try:
+        plan = _plan(
+            src=src, dst=dst, service=service, firewalls=targets,
+            justification=justification, ticket_id=ticket_id,
+            src_group=src_group, dst_group=dst_group,
+        )
+    except PlannerDataError as exc:
+        return {"error": str(exc), "error_source": exc.source}
+
+    payload = to_report_payload(plan)
+    payload["warnings"] = plan.warnings
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Aggregate the per-package tools
+# ---------------------------------------------------------------------------
+
+def _register_existing_tools() -> None:
+    from standards_mcp import server as standards
+    from fortimanager_mcp import server as fmg
+    from feedback_mcp import server as feedback
+    from intake_mcp import server as intake
+    from zone_mcp import server as zone
+
+    for fn in (
+        # standards (static data — naming/logging/approvals; NOT verdicts)
+        standards.get_zone_matrix,
+        standards.check_traffic,
+        standards.get_naming_convention,
+        standards.get_required_log_settings,
+        standards.get_review_requirements,
+        # fortimanager (read-only)
+        fmg.get_system_status,
+        fmg.get_ha_status,
+        fmg.get_adoms,
+        fmg.get_devices,
+        fmg.search_devices,
+        fmg.search_policies,
+        fmg.get_address_object,
+        fmg.search_address_objects,
+        fmg.get_service_object,
+        fmg.get_policy,
+        fmg.get_interface_map,
+        fmg.get_routing_table,
+        fmg.list_device_vdoms,
+        # feedback / audit
+        feedback.record_feedback,
+        feedback.get_similar_cases,
+        feedback.get_feedback_summary,
+        feedback.flag_for_review,
+        feedback.get_audit_log,
+        # intake
+        intake.parse_spreadsheet_file,
+        intake.parse_manual_entry_tool,
+        intake.describe_template,
+        # zone (live 4THealth — authoritative verdicts)
+        zone.query_zone_policy,
+        zone.get_zones,
+        zone.get_policies,
+        zone.find_zone_for_ip,
+        zone.check_ip_traffic,
+    ):
+        mcp.add_tool(fn)
+
+
+_register_existing_tools()
+
+
+if __name__ == "__main__":
+    mcp.run()

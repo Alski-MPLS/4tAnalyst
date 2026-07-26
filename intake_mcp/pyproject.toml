@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "intake-mcp"
+version = "0.1.0"
+description = "Intake MCP server — parse firewall request spreadsheets or accept manual entry"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "openpyxl>=3.1.0",
+]
+
+[project.scripts]
+intake-mcp = "intake_mcp.server:mcp.run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["intake_mcp"]

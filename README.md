@@ -4,6 +4,8 @@ An AI assistant for firewall change request analysis. Engineers interact with it
 
 > Note: This is an independent open-source project and is not affiliated with, endorsed by, or supported by Fortinet, Inc. FortiManager is a trademark of Fortinet, Inc.
 
+> Note: This a work in progress. It will change as I continue to build it out. Any recommendations are encouraged. 
+
 ## What it does
 
 Firewall engineers typically spend significant time on rule request processing: parsing incoming requests, identifying which firewalls are affected, researching existing rules, checking against segmentation policy, validating naming and logging standards, and assembling peer review documentation. 4tAnalyst automates that research layer, reducing it to judgment calls.

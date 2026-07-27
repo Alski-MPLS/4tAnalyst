@@ -75,9 +75,10 @@ python3 scripts/run_smoke.py
 ### fwanalyst_server/
 
 - **`server.py`** — single FastMCP aggregating all 31 per-package tools (via `add_tool`) + `plan_change` (32 total; `tests/test_fwanalyst_auth.py` asserts the count — update it when adding tools).
-- **`auth.py`** — `require_bearer(app, token)` ASGI wrapper; constant-time compare; fail-closed (`AuthConfigError` on empty token).
+- **`context.py`** — Thin shared module: exports `allowed_adoms_var: ContextVar[set[str]]`. Lives here (not in `auth.py`) so `fortimanager_mcp` can import it without a circular dependency.
+- **`auth.py`** — `require_bearer(app, token, creds=None)` ASGI wrapper; constant-time compare; fail-closed (`AuthConfigError` on empty token). When `creds` is provided, resolves the bearer token to an allowed ADOM set via `_resolve_allowed_adoms()` and injects it into `allowed_adoms_var` for the duration of each request. Named per-engineer tokens from `server.tokens` are accepted in addition to the primary admin token.
 - **`rate_limit.py`** — `rate_limit(app, max_requests, window_seconds)` ASGI wrapper; per-`Mcp-Session-Id` sliding-window call budget, `429` past the limit (defaults 300 req/60s, `FW_ANALYST_RATE_LIMIT_MAX`/`FW_ANALYST_RATE_LIMIT_WINDOW_SECONDS`, `MAX=0` disables). Applied inside `require_bearer` in `__main__.py` so unauthenticated requests never consume budget.
-- **`__main__.py`** — `MCP_TRANSPORT=stdio` (default) or `http` (uvicorn + streamable_http_app, path `/mcp`). In HTTP mode also sets `transport_security` (DNS-rebinding protection, `FW_ANALYST_ALLOWED_HOSTS` or `credentials.yaml` `server.allowed_hosts`) — unset keeps the MCP SDK's localhost-only default, which rejects real engineer traffic once deployed to a real hostname.
+- **`__main__.py`** — `MCP_TRANSPORT=stdio` (default) or `http` (uvicorn + streamable_http_app, path `/mcp`). In HTTP mode also sets `transport_security` (DNS-rebinding protection, `FW_ANALYST_ALLOWED_HOSTS` or `credentials.yaml` `server.allowed_hosts`) — unset keeps the MCP SDK's localhost-only default, which rejects real engineer traffic once deployed to a real hostname. Loads full `credentials.yaml` and passes it to `require_bearer` so per-engineer ADOM restrictions are enforced.
 
 ### Critical data-source warning
 
@@ -108,8 +109,8 @@ python3 scripts/run_smoke.py
 
 **`query.py`** — high-level query helpers consumed by `server.py`. `search_policies` returns a structured dict `{policies, packages_searched, packages_failed, degraded}` — when `degraded` is True an empty match list must NOT be read as "no rule exists".
 
-**`server.py`** — FastMCP exposing 13 read-only tools:
-- `get_system_status`, `get_ha_status` — FortiManager version/hostname/serial and HA cluster status
+**`server.py`** — FastMCP exposing 13 read-only tools. All tools that accept an `adom` parameter call `_require_adom(adom)` as their first line — hard-erroring if the caller's token is not allowed for that ADOM. `get_adoms()` silently filters the returned list to the caller's allowed set. In stdio/dev mode (no HTTP middleware, `allowed_adoms_var` unset) all tools default to full access.
+- `get_system_status`, `get_ha_status` — FortiManager version/hostname/serial and HA cluster status (no ADOM param — not guarded)
 - `get_adoms`, `get_devices`, `search_devices` — discovery (search_devices filters get_devices client-side by name/platform/OS/connection status)
 - `search_policies(adom, device, src_ip, dst_ip, service)` — structured set-semantics policy search
 - `get_address_object`, `search_address_objects(adom, ip)` — find existing objects before creating new ones
@@ -205,7 +206,8 @@ Unit tests live in `tests/`. Run with `pytest -q tests/`. Test files:
 - `tests/test_planner_standards.py` — risk/logging/naming decision rules
 - `tests/test_engine.py` — planner models, fetch layer, and `plan_change` end-to-end with fake clients; payload validated against `render_report.validate_payload`
 - `tests/test_cli_gen.py` — exact-string FortiGate CLI assertions
-- `tests/test_fwanalyst_auth.py` — bearer middleware + tool-aggregation count
+- `tests/test_fwanalyst_auth.py` — bearer middleware, ADOM token resolution, ContextVar injection, tool-aggregation count
+- `tests/test_fortimanager_adom_guard.py` — `_require_adom()` logic and `get_adoms()` filtering
 - `tests/test_rate_limit.py` — per-session call-budget middleware (window expiry, per-session isolation, 429 + Retry-After)
 - `tests/test_policy_engine.py`, `tests/test_fortimanager_client.py`, `tests/test_zone_client.py`, `tests/test_zone_map.py`, `tests/test_render_report.py` — pre-existing suites
 
@@ -235,6 +237,15 @@ fortimanager:
   port: 443
   verify_ssl: true
   version: "7.4"             # or "7.6"
+
+server:
+  adom_restriction: true     # false = disable per-token ADOM filtering (all tokens get full access)
+  auth_token: "..."          # admin/legacy token — always full access; used when FW_ANALYST_TOKEN env not set
+  tokens:                    # optional per-engineer tokens with ADOM restrictions
+    - token: "..."
+      label: "engineer-name" # for logs/audit only
+      adoms: ["OT-ADOM"]     # restrict to these ADOMs; ["*"] = unrestricted
+  allowed_hosts: []          # host-header allowlist for DNS-rebinding protection
 
 zone_policy:
   base_url: "https://4thealth.internal.example.com"

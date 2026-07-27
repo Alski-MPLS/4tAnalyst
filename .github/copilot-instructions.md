@@ -7,68 +7,109 @@ Short, actionable repository-specific guidance for Copilot/assistant sessions.
 1) Build, test, and lint (repository-specific)
 
 - Install packages (editable) — run from repository root:
-  - uv pip install -e standards_mcp/
-  - uv pip install -e fortimanager_mcp/
-  - uv pip install -e feedback_mcp/
-  - uv pip install -e intake_mcp/
-  - uv pip install -e zone_mcp/
+  - uv pip install -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
+      -e intake_mcp/ -e zone_mcp/ -e planner/ -e fwanalyst_server/
 
-- Run a single MCP server (development / debug, stdio):
-  - uv run python -m standards_mcp.server
-  - uv run python -m fortimanager_mcp.server
+- Run the deterministic planner directly (no LLM, no server needed):
+  - uv run python -m planner --src 10.1.2.3 --dst 10.9.8.7 --service tcp/8443 \
+      --firewall MNHQ-FW01:OT-ADOM --ticket CHG0012345 [--json-only]
 
-- Run a single MCP server (production-like SSE):
-  - uv run mcp run standards_mcp/server.py --transport sse --port 8000
+- Run the unified server (development, stdio):
+  - uv run python -m fwanalyst_server
+
+- Run the unified server (production-like, streamable-HTTP + bearer auth, one port):
+  - MCP_TRANSPORT=http FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8000 \
+      FW_ANALYST_TOKEN=<token> uv run python -m fwanalyst_server
+  - Refuses to start in HTTP mode without a token (`FW_ANALYST_TOKEN` env or
+    `credentials.yaml` `server.auth_token`; env wins).
+
+- Individual per-package servers still run over stdio for debugging:
+  - uv run python -m zone_mcp.server   # etc.
+
+- Docker:
+  - docker compose up                              # local dev, mounts repo for live edits
+  - docker compose -f docker-compose.ci.yml up      # CI image, no mounts
 
 - Rebuild policy DB (one-shot):
   - uv run python standards_mcp/build_policy_db.py
   - Do not edit standards_mcp/policy_db.json by hand; regenerate from TUFIN CSVs.
 
-- Smoke tests (quick checks):
-  - curl -s http://localhost:8000/sse | head -2   # standards_mcp
-  - curl -s http://localhost:8001/sse | head -2   # fortimanager_mcp
-
-- Tests & lint: No test framework or linter is configured in this repo as of now. Use manual smoke tests above. If adding tests, update this file.
+- Tests & lint:
+  - pytest -q tests/   # full suite, no live systems needed
+  - python3 scripts/run_smoke.py   # smoke check; server must be running,
+    asserts 401 without a token, 200 with one.
 
 2) High-level architecture (big picture)
 
-- The project is a set of independent Python MCP servers (packages suffixed with `_mcp`) that expose read-only tools via the Model Context Protocol to Claude Code running on engineer workstations.
+- Core design rule: the LLM orchestrates, code computes. All correctness-critical
+  analysis (rule coverage, object reuse, insertion point, CLI generation) lives in
+  the deterministic `planner/` package.
+- In production, **one process** — `fwanalyst_server` (port 8000, streamable-HTTP,
+  static-bearer auth, fail-closed) — aggregates every tool from every package below,
+  plus `plan_change`. The per-domain packages remain individually runnable over
+  stdio for development, but they are not deployed as separate services.
 - Key packages:
-  - standards_mcp (port 8000) — zone matrix, naming.yaml, review_requirements.yaml, and policy evaluation (policy_engine.py).
-  - fortimanager_mcp (port 8001) — read-only FortiManager queries (devices, policies, search).
-  - feedback_mcp (port 8002) — decision/audit store (SQLite in Phase 1).
-  - intake_mcp (port 8003) — spreadsheet (.xlsx) parser and manual entry normalization.
-  - zone_mcp (port 8004) — IP→zone resolution and policy queries to 4THealth (Phase 2 mapper).
-  - netbrain_mcp — planned for automated path discovery (future).
-- Dataflow: intake → zone_mcp (resolve zones) + fortimanager_mcp (search device rules) → standards_mcp (naming/logging/review rules) → feedback_mcp (store decisions).
+  - planner — deterministic change planner (`plan_change()`): verdict, coverage,
+    reuse, insertion, CLI generation. Also a standalone CLI.
+  - fwanalyst_server — the unified MCP server described above.
+  - standards_mcp — zone matrix, naming.yaml, review_requirements.yaml, static
+    policy evaluation (policy_engine.py). Static TUFIN-era data — do not use for
+    live verdicts.
+  - fortimanager_mcp — read-only FortiManager JSON-RPC queries + matching.py
+    set-semantics layer.
+  - zone_mcp — live 4THealth zone policy API (IP→zone + verdict). **Authoritative
+    for verdicts** — always prefer this over standards_mcp for engineer workflows.
+  - feedback_mcp — SQLite decision/audit store with similarity lookup.
+  - intake_mcp — .xlsx parser + manual entry normaliser.
+  - netbrain_mcp — planned, not yet started (blocked on NetBrain API access).
+- Dataflow: intake_mcp (normalise) → zone_mcp (verdict) + fortimanager_mcp
+  (existing rules/objects) → standards_mcp (naming/logging/approval) →
+  feedback_mcp (record decision).
 
 3) Key repository conventions and patterns
 
-- Each MCP server is an independent Python package with its own pyproject.toml and server.py. Follow the fortimanager_mcp pattern when adding a new MCP package.
+- Each MCP server is an independent Python package with its own pyproject.toml
+  and server.py, aggregated into `fwanalyst_server` via `add_tool`. Follow the
+  fortimanager_mcp pattern when adding a new MCP package (see CONTRIBUTING.md).
 - Configuration vs code:
-  - standards_mcp/naming.yaml and standards_mcp/review_requirements.yaml are team-maintained config files and are loaded at server startup. Editing them requires only a restart of the standards_mcp server.
-  - Do not hand-edit policy_db.json — regenerate it with build_policy_db.py when TUFIN CSVs change.
-- Policy engine is stateless and pure (policy_engine.py): callables accept DB dicts; avoid global I/O in evaluation logic.
+  - standards_mcp/naming.yaml and standards_mcp/review_requirements.yaml are
+    team-maintained config files loaded at server startup.
+  - Do not hand-edit policy_db.json — regenerate it with build_policy_db.py when
+    TUFIN CSVs change.
+- Policy engine is stateless and pure (policy_engine.py): callables accept DB
+  dicts; avoid global I/O in evaluation logic.
 - Security-sensitive files:
-  - Do not commit credentials.yaml or any file containing API keys, internal IPs, or hostnames. credentials.yaml.example exists as a template.
+  - Do not commit credentials.yaml or any file containing API keys, internal IPs,
+    or hostnames. credentials.yaml.example exists as a template.
+  - `fwanalyst_server/auth.py` resolves bearer tokens to per-engineer ADOM
+    restrictions (`server.tokens` in credentials.yaml); see context.py for the
+    `allowed_adoms_var` ContextVar it injects per request.
 - Developer run modes:
-  - stdio mode (uv run python -m <pkg>.server) for quick debugging; SSE mode (uv run mcp run ...) for production-like behaviour.
-- Smoke-testing endpoints:
-  - Each MCP exposes an SSE endpoint (/<sse>) that can be sanity-checked with curl as above.
+  - stdio mode (`uv run python -m <pkg>.server` or `python -m fwanalyst_server`)
+    for quick debugging; `MCP_TRANSPORT=http` for production-like behaviour.
+- Smoke-testing: `scripts/run_smoke.py` / `scripts/smoke-test.sh` hit the single
+  unified port (8000) and assert 401 without a token, non-401 with one.
 
 4) AI assistant / existing assistant artifacts to reuse
 
-- CLAUDE.md and .claude/skills/ contain explicit directions and slash-command examples for Claude Code. Prioritize them when producing assistant prompts or building MCP interactions.
-- This repo uses manual smoke-testing; search for documentation in docs/ and the .claude directory before suggesting automated test approaches.
+- CLAUDE.md and .claude/skills/ contain explicit directions and slash-command
+  examples for Claude Code. Prioritize them when producing assistant prompts or
+  building MCP interactions — CLAUDE.md is the canonical architecture reference;
+  keep this file consistent with it.
+- pytest-based tests live in tests/; prefer running/extending those over manual
+  smoke testing where possible.
 
 5) When changing repository structure or adding servers
 
-- Follow CONTRIBUTING.md: add `<name>_mcp/` with __init__.py, server.py and pyproject.toml; document creds in credentials.yaml.example; add smoke test notes to docs/installation.md; and include a smoke test result in the PR.
+- Follow CONTRIBUTING.md: add `<name>_mcp/` with __init__.py, server.py and
+  pyproject.toml; document creds in credentials.yaml.example; register the new
+  tools in `fwanalyst_server/server.py` (and update the tool count assertion in
+  tests/test_fwanalyst_auth.py); add smoke test notes to docs/installation.md;
+  and include a smoke test result in the PR.
 
 6) Useful files to inspect first in a Copilot session
 
-- README.md, CLAUDE.md, CONTRIBUTING.md, docs/installation.md, docs/architecture.md, standards_mcp/server.py, standards_mcp/policy_engine.py, standards_mcp/naming.yaml, standards_mcp/review_requirements.yaml, .claude/skills/*.md
-
----
-
-If you'd like, configure MCP server helpers (e.g., a Playwright or other test MCP) for this project now. Otherwise, the file is ready.
+- README.md, CLAUDE.md, CONTRIBUTING.md, docs/installation.md,
+  docs/architecture.md, fwanalyst_server/server.py, fwanalyst_server/auth.py,
+  planner/engine.py, standards_mcp/policy_engine.py, standards_mcp/naming.yaml,
+  standards_mcp/review_requirements.yaml, .claude/skills/*.md

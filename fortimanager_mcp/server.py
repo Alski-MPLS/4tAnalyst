@@ -203,6 +203,8 @@ def get_devices(adom: str) -> list[dict[str, Any]]:
     Returns device name, management IP, firmware version, HA mode,
     connection status, and database sync status.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.list_devices(c, adom)
 
@@ -234,6 +236,8 @@ def search_devices(
     All filters combine with AND. Filtering is client-side over get_devices —
     no additional FortiManager query is issued. Returns {count, devices}.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.search_devices(c, adom, name_filter, platform_filter,
                                       os_version_filter, connection_status)
@@ -276,6 +280,8 @@ def search_policies(
       degraded          : True if any package failed — an empty `policies`
                           list is then NOT proof that no rule exists
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.search_policies(c, adom, device, src_ip, dst_ip, service)
 
@@ -297,6 +303,8 @@ def get_address_object(adom: str, name_or_ip: str) -> dict[str, Any]:
 
     Returns the object's name, type, subnet, FQDN (if set), comment, and UUID.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.get_address_object(c, adom, name_or_ip)
 
@@ -321,6 +329,8 @@ def search_address_objects(adom: str, ip: str) -> list[dict[str, Any]]:
 
     Returns a list of matching objects with their subnet, type, comment, and scope.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.search_address_objects(c, adom, ip)
 
@@ -342,6 +352,8 @@ def get_service_object(adom: str, name_or_port: str) -> dict[str, Any]:
 
     Returns the service object's name, protocol, TCP/UDP port ranges, and comment.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.get_service_object(c, adom, name_or_port)
 
@@ -364,6 +376,8 @@ def get_policy(adom: str, pkg: str, policy_id: int) -> dict[str, Any]:
     Returns all policy fields: source/destination interfaces and addresses,
     service, action, logging, NAT, and UUID.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.get_policy(c, adom, pkg, policy_id)
 
@@ -386,6 +400,8 @@ def get_interface_map(adom: str, device: str) -> dict[str, Any]:
     and admin status. Also returns device firmware version and HA mode.
     Use this to determine which zone an IP belongs to on a specific firewall.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.get_interface_map(c, adom, device)
 
@@ -409,6 +425,8 @@ def get_routing_table(adom: str, device: str) -> list[dict[str, Any]]:
     Use this for path analysis when determining which firewall is in the
     forwarding path between two IP addresses.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.get_routing_table(c, adom, device)
 
@@ -432,6 +450,8 @@ def list_device_vdoms(adom: str, device: str) -> list[dict[str, Any]]:
     get_routing_table), but multi-VDOM devices route traffic per-VDOM —
     use this to confirm which VDOM a flow actually traverses.
     """
+    if err := _require_adom(adom):
+        return err
     with _fortimanager_client() as c:
         return _query.list_device_vdoms(c, adom, device)
 

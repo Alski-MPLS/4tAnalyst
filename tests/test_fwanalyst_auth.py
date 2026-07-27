@@ -104,10 +104,11 @@ def test_resolve_adoms_restriction_disabled():
             ],
         }
     }
-    # Recognized tokens get {"*"} when restriction is off (ADOM filter lifted)
+    # Recognized named tokens get {"*"} when restriction is off
     assert _resolve_allowed_adoms("eng-tok", creds) == {"*"}
-    assert _resolve_allowed_adoms("admin-tok", creds) == {"*"}
-    # Unrecognized tokens still return None — auth is always enforced
+    # admin-tok is NOT a named token — not resolved here; handled by require_bearer primary check
+    assert _resolve_allowed_adoms("admin-tok", creds) is None
+    # Unrecognized tokens still return None
     assert _resolve_allowed_adoms("garbage", creds) is None
 
 
@@ -141,9 +142,11 @@ def test_resolve_adoms_named_token_wildcard():
 
 
 def test_resolve_adoms_legacy_auth_token():
+    """Legacy auth_token is NOT resolved by _resolve_allowed_adoms; handled by require_bearer's primary check."""
     from fwanalyst_server.auth import _resolve_allowed_adoms
     creds = {"server": {"adom_restriction": True, "auth_token": "legacy", "tokens": []}}
-    assert _resolve_allowed_adoms("legacy", creds) == {"*"}
+    # auth_token is no longer a lookup target — returns None (not a named token)
+    assert _resolve_allowed_adoms("legacy", creds) is None
 
 
 def test_resolve_adoms_unknown_token_returns_none():

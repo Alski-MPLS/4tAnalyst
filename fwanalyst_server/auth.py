@@ -18,16 +18,15 @@ class AuthConfigError(ValueError):
 
 
 def _resolve_allowed_adoms(token: str, creds: dict) -> set[str] | None:
-    """Return the allowed ADOM set for a token, or None if unrecognized.
+    """Return the allowed ADOM set for a named token, or None if not in server.tokens.
 
-    Precedence:
-    1. token in server.tokens → that entry's adoms set (or {"*"} if adom_restriction: false)
-    2. token == server.auth_token → {"*"} (legacy full-access, always)
-    3. no match → None (caller should 401)
+    Only named tokens from server.tokens are resolved here. The legacy auth_token
+    is handled by require_bearer's primary hmac.compare_digest check — it is NOT
+    a second lookup target here. This prevents the yaml auth_token from acting as
+    a permanent backdoor when FW_ANALYST_TOKEN env var overrides it.
 
-    Note: adom_restriction: false lifts the per-ADOM restriction for recognized
-    tokens (they all get {"*"}), but unrecognized tokens still return None — auth
-    is always enforced regardless of the restriction flag.
+    When adom_restriction: false, recognized named tokens still get {"*"} (ADOM
+    filter lifted), but unrecognized tokens return None — auth always enforced.
     """
     server_cfg = creds.get("server", {})
     restriction_enabled = server_cfg.get("adom_restriction", True)
@@ -40,10 +39,6 @@ def _resolve_allowed_adoms(token: str, creds: dict) -> set[str] | None:
                 return {"*"}
             adoms = entry.get("adoms", [])
             return {"*"} if "*" in adoms else set(adoms)
-
-    legacy = server_cfg.get("auth_token", "")
-    if legacy and hmac.compare_digest(token.encode(), legacy.encode()):
-        return {"*"}
 
     return None
 

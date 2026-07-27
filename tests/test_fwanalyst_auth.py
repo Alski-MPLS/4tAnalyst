@@ -91,3 +91,62 @@ def test_context_module_exports_allowed_adoms_var():
     from fwanalyst_server.context import allowed_adoms_var
     from contextvars import ContextVar
     assert isinstance(allowed_adoms_var, ContextVar)
+
+
+def test_resolve_adoms_restriction_disabled():
+    from fwanalyst_server.auth import _resolve_allowed_adoms
+    creds = {
+        "server": {
+            "adom_restriction": False,
+            "auth_token": "admin-tok",
+            "tokens": [
+                {"token": "eng-tok", "label": "alice", "adoms": ["OT-ADOM"]},
+            ],
+        }
+    }
+    # Recognized tokens get {"*"} when restriction is off (ADOM filter lifted)
+    assert _resolve_allowed_adoms("eng-tok", creds) == {"*"}
+    assert _resolve_allowed_adoms("admin-tok", creds) == {"*"}
+    # Unrecognized tokens still return None — auth is always enforced
+    assert _resolve_allowed_adoms("garbage", creds) is None
+
+
+def test_resolve_adoms_named_token_restricted():
+    from fwanalyst_server.auth import _resolve_allowed_adoms
+    creds = {
+        "server": {
+            "adom_restriction": True,
+            "auth_token": "admin-tok",
+            "tokens": [
+                {"token": "eng-tok", "label": "alice", "adoms": ["OT-ADOM", "GAS-ADOM"]},
+            ],
+        }
+    }
+    result = _resolve_allowed_adoms("eng-tok", creds)
+    assert result == {"OT-ADOM", "GAS-ADOM"}
+
+
+def test_resolve_adoms_named_token_wildcard():
+    from fwanalyst_server.auth import _resolve_allowed_adoms
+    creds = {
+        "server": {
+            "adom_restriction": True,
+            "auth_token": "admin-tok",
+            "tokens": [
+                {"token": "power-tok", "label": "bob", "adoms": ["*"]},
+            ],
+        }
+    }
+    assert _resolve_allowed_adoms("power-tok", creds) == {"*"}
+
+
+def test_resolve_adoms_legacy_auth_token():
+    from fwanalyst_server.auth import _resolve_allowed_adoms
+    creds = {"server": {"adom_restriction": True, "auth_token": "legacy", "tokens": []}}
+    assert _resolve_allowed_adoms("legacy", creds) == {"*"}
+
+
+def test_resolve_adoms_unknown_token_returns_none():
+    from fwanalyst_server.auth import _resolve_allowed_adoms
+    creds = {"server": {"adom_restriction": True, "auth_token": "real", "tokens": []}}
+    assert _resolve_allowed_adoms("garbage", creds) is None

@@ -10,9 +10,42 @@ from __future__ import annotations
 import hmac
 import json
 
+from fwanalyst_server.context import allowed_adoms_var
+
 
 class AuthConfigError(ValueError):
     """Raised when HTTP mode is requested without a usable token."""
+
+
+def _resolve_allowed_adoms(token: str, creds: dict) -> set[str] | None:
+    """Return the allowed ADOM set for a token, or None if unrecognized.
+
+    Precedence:
+    1. token in server.tokens → that entry's adoms set (or {"*"} if adom_restriction: false)
+    2. token == server.auth_token → {"*"} (legacy full-access, always)
+    3. no match → None (caller should 401)
+
+    Note: adom_restriction: false lifts the per-ADOM restriction for recognized
+    tokens (they all get {"*"}), but unrecognized tokens still return None — auth
+    is always enforced regardless of the restriction flag.
+    """
+    server_cfg = creds.get("server", {})
+    restriction_enabled = server_cfg.get("adom_restriction", True)
+
+    for entry in server_cfg.get("tokens", []):
+        if hmac.compare_digest(
+            token.encode(), entry.get("token", "").encode()
+        ):
+            if not restriction_enabled:
+                return {"*"}
+            adoms = entry.get("adoms", [])
+            return {"*"} if "*" in adoms else set(adoms)
+
+    legacy = server_cfg.get("auth_token", "")
+    if legacy and hmac.compare_digest(token.encode(), legacy.encode()):
+        return {"*"}
+
+    return None
 
 
 def require_bearer(app, token: str):

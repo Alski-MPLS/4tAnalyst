@@ -190,3 +190,31 @@ def test_require_bearer_unknown_token_still_401():
     app = require_bearer(_echo_app, "admin", creds)
     sent = _call(app, [(b"authorization", b"Bearer garbage")])
     assert sent[0]["status"] == 401
+
+
+def test_require_bearer_named_token_differs_from_primary():
+    """A named token from server.tokens is accepted even when it differs from the primary admin token."""
+    from fwanalyst_server.auth import require_bearer
+    from fwanalyst_server.context import allowed_adoms_var
+
+    captured = {}
+
+    async def capturing_app(scope, receive, send):
+        captured["adoms"] = allowed_adoms_var.get(None)
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    creds = {
+        "server": {
+            "adom_restriction": True,
+            "auth_token": "admin-token",          # primary token
+            "tokens": [
+                {"token": "eng-tok", "label": "alice", "adoms": ["OT-ADOM"]},
+            ],
+        }
+    }
+    # require_bearer is initialized with the admin token, but eng-tok is submitted
+    app = require_bearer(capturing_app, "admin-token", creds)
+    sent = _call(app, [(b"authorization", b"Bearer eng-tok")])
+    assert sent[0]["status"] == 200
+    assert captured["adoms"] == {"OT-ADOM"}

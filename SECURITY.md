@@ -76,6 +76,70 @@ were replaced with placeholders repo-wide, including in history.
 | `standards_mcp/policy_db.json`, `standards_mcp/policy-data/` | Real internal subnets, site names, and zone topology | Untracked, gitignored, and purged from git history (2026-07-25) |
 | `fmg-test.md` | Pre-scrub version had real hosts/IPs at commit `d2a2015` | Purged from git history (2026-07-25) |
 
+## Issuing engineer tokens
+
+Engineers connect to the central MCP server using per-engineer bearer tokens scoped to one or more ADOMs. This section covers the admin workflow for creating and revoking those tokens.
+
+### Generating a token
+
+```bash
+openssl rand -hex 32
+```
+
+This produces a 64-character hex string. Each engineer gets a unique token.
+
+### Adding the token to credentials.yaml
+
+Open `credentials.yaml` on the central server and add an entry under `server.tokens`:
+
+```yaml
+server:
+  adom_restriction: true
+  auth_token: "..."   # admin token — unchanged
+
+  tokens:
+    # Existing entries...
+    - token: "a1b2c3d4..."        # 64-char hex from openssl rand -hex 32
+      label: "firstname-lastname" # human-readable; appears in audit logs only
+      adoms: ["OT-ADOM"]          # list the ADOMs this engineer needs
+                                  # use ["*"] for full access (same as auth_token)
+```
+
+To restrict to multiple ADOMs: `adoms: ["OT-ADOM", "GAS-ADOM"]`.
+To grant full access (e.g., a second admin or a tester): `adoms: ["*"]`.
+
+After editing `credentials.yaml`, restart the unified server for the change to take effect:
+
+```bash
+systemctl restart fw-analyst   # or however the server is managed at your site
+```
+
+### Sending the token to the engineer
+
+Send the token over a secure channel — encrypted email, a privileged ticket in ServiceNow, or an internal secrets manager. Do not send it via unencrypted email, Teams/Slack DM (unless E2E encrypted), or document it in the firewall change ticket.
+
+Tell the engineer:
+- Their token value (64 hex chars)
+- The central server hostname and port (e.g., `fw-analyst.internal.example.com:8000`)
+- Which ADOMs they have access to, so they can verify
+- To direct them to `docs/workstation-onboarding.md` if they need setup instructions
+
+### Revoking a token
+
+Remove the engineer's `tokens` entry from `credentials.yaml` and restart the server. The token is immediately invalid once the server reloads. No other action is required — the server carries no session state.
+
+If you suspect a token was compromised (exposed in a chat log, committed to git, etc.):
+1. Remove the entry from `credentials.yaml` immediately
+2. Restart the server
+3. Generate a new token and reissue to the engineer if their access should continue
+4. Review the audit log (`feedback_mcp.get_audit_log`) for any unexpected activity under that engineer's label
+
+### Disabling ADOM filtering entirely
+
+If your deployment has a single team and all engineers need full access, set `adom_restriction: false` in `credentials.yaml`. Every recognized token (primary `auth_token` and all `tokens` entries) gets unrestricted access. Unrecognized tokens are still rejected with 401.
+
+---
+
 ## Reporting vulnerabilities
 
 If you discover a security issue in this codebase, please report it to your organization's security team directly rather than opening a public GitHub issue. Do not include exploit details or internal network information in public issues.

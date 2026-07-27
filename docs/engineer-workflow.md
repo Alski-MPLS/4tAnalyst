@@ -58,7 +58,7 @@ If it still shows a placeholder (`.claude/mcp_servers.json.example`), copy it to
 }
 ```
 
-Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc. — see `todo.md`). Ask the team for the correct hostname once the TLS reverse proxy is in place.
+Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc. — see `todo.md`). See `docs/workstation-onboarding.md` for the step-by-step setup including how to request your token.
 
 ### Verify connectivity
 
@@ -234,7 +234,7 @@ Central MCP Server (fwanalyst_server, port 8000)
 **Causes and fixes:**
 
 1. Central server is down or the unified service crashed. SSH to the central server and check: `systemctl status fw-analyst`. Restart if needed.
-2. A `401 Unauthorized` means the bearer token in your `mcp_servers.json` is missing or wrong — ask the team for the current `FW_ANALYST_TOKEN`.
+2. A `401 Unauthorized` means the bearer token in your `mcp_servers.json` is missing, wrong, or revoked — ask the team lead for a new token. If you previously had access to an ADOM and now get `{"error": "ADOM '...' is not in your allowed list."}` from a tool, your token's ADOM scope needs updating — contact the admin (see `SECURITY.md` §"Issuing engineer tokens").
 3. Your laptop's `mcp_servers.json` has the wrong hostname or port. Re-read the file and confirm it matches what the team distributed.
 4. Firewall between your laptop and the central server is blocking port 8000. Confirm you are on the correct VPN profile or network segment that allows HTTPS to the central server.
 5. TLS certificate error (self-signed cert not trusted). Ask your admin for the CA cert and add it to your system trust store, or confirm the server is using a properly signed internal cert.

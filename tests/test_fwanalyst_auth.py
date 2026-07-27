@@ -85,3 +85,9 @@ def test_unified_server_aggregates_all_tools():
                      "parse_spreadsheet_file", "get_naming_convention"):
         assert expected in names, f"missing {expected}"
     assert len(names) == 32  # 31 aggregated + plan_change
+
+
+def test_context_module_exports_allowed_adoms_var():
+    from fwanalyst_server.context import allowed_adoms_var
+    from contextvars import ContextVar
+    assert isinstance(allowed_adoms_var, ContextVar)

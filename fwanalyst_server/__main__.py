@@ -35,6 +35,15 @@ def _auth_token() -> str:
     return ""
 
 
+def _load_creds() -> dict:
+    """Load the full credentials dict (for ADOM restriction config)."""
+    creds_path = Path(os.getenv("CREDENTIALS_FILE", str(_REPO_ROOT / "credentials.yaml")))
+    if creds_path.exists():
+        with open(creds_path, encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    return {}
+
+
 def _allowed_hosts() -> list[str]:
     """Host-header values (for DNS-rebinding protection) accepted on the
     engineers' connection URL — e.g. "central-server:8000" or a wildcard
@@ -88,7 +97,8 @@ def main() -> None:
                                   str(_DEFAULT_RATE_LIMIT_WINDOW)))
         app = rate_limit(app, max_requests, window)
 
-    app = require_bearer(app, _auth_token())
+    creds = _load_creds()
+    app = require_bearer(app, _auth_token(), creds)
     uvicorn.run(app, host=host, port=port)
 
 

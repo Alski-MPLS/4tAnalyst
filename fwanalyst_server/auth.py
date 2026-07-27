@@ -48,14 +48,20 @@ def _resolve_allowed_adoms(token: str, creds: dict) -> set[str] | None:
     return None
 
 
-def require_bearer(app, token: str):
-    """Wrap an ASGI app: reject requests lacking `Authorization: Bearer <token>`."""
+def require_bearer(app, token: str, creds: dict | None = None):
+    """Wrap an ASGI app: reject requests lacking `Authorization: Bearer <token>`.
+
+    When creds is provided, also resolves the token's allowed ADOM set and
+    injects it into allowed_adoms_var for the duration of each request.
+    When creds is omitted (or empty), falls back to full access for the
+    token — preserving backward-compatibility with existing call sites and tests.
+    """
     if not token or not token.strip():
         raise AuthConfigError(
             "Refusing to serve HTTP without an auth token. Set FW_ANALYST_TOKEN "
             "or server.auth_token in credentials.yaml."
         )
-    expected = f"Bearer {token.strip()}".encode()
+    _creds = creds or {}
 
     async def wrapped(scope, receive, send):
         if scope["type"] != "http":
@@ -63,20 +69,37 @@ def require_bearer(app, token: str):
             return
 
         headers = dict(scope.get("headers", []))
-        supplied = headers.get(b"authorization", b"")
-        if not hmac.compare_digest(supplied, expected):
-            body = json.dumps({"error": "unauthorized"}).encode()
-            await send({
-                "type": "http.response.start",
-                "status": 401,
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"www-authenticate", b"Bearer"),
-                ],
-            })
-            await send({"type": "http.response.body", "body": body})
-            return
+        supplied_bytes = headers.get(b"authorization", b"")
+        supplied_str = supplied_bytes.decode("latin-1")
 
-        await app(scope, receive, send)
+        # Strip "Bearer " prefix for resolution
+        supplied_token = supplied_str.removeprefix("Bearer ").strip()
+
+        adom_set = _resolve_allowed_adoms(supplied_token, _creds) if supplied_token else None
+
+        # Constant-time check against the primary token
+        expected = f"Bearer {token.strip()}".encode()
+        if not hmac.compare_digest(supplied_bytes, expected):
+            # Also accept any token in the named tokens list (already resolved above)
+            if adom_set is None:
+                body = json.dumps({"error": "unauthorized"}).encode()
+                await send({
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"www-authenticate", b"Bearer"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+
+        # Inject ADOM set (full access if no creds provided or legacy token)
+        resolved = adom_set if adom_set is not None else {"*"}
+        token_ctx = allowed_adoms_var.set(resolved)
+        try:
+            await app(scope, receive, send)
+        finally:
+            allowed_adoms_var.reset(token_ctx)
 
     return wrapped

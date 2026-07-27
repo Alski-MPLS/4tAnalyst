@@ -150,3 +150,43 @@ def test_resolve_adoms_unknown_token_returns_none():
     from fwanalyst_server.auth import _resolve_allowed_adoms
     creds = {"server": {"adom_restriction": True, "auth_token": "real", "tokens": []}}
     assert _resolve_allowed_adoms("garbage", creds) is None
+
+
+def test_require_bearer_injects_allowed_adoms_into_contextvar():
+    from fwanalyst_server.auth import require_bearer
+    from fwanalyst_server.context import allowed_adoms_var
+
+    captured = {}
+
+    async def capturing_app(scope, receive, send):
+        captured["adoms"] = allowed_adoms_var.get(None)
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    creds = {
+        "server": {
+            "adom_restriction": True,
+            "auth_token": "admin",
+            "tokens": [
+                {"token": "eng-tok", "label": "alice", "adoms": ["OT-ADOM"]},
+            ],
+        }
+    }
+    app = require_bearer(capturing_app, "eng-tok", creds)
+    _call(app, [(b"authorization", b"Bearer eng-tok")])
+    assert captured["adoms"] == {"OT-ADOM"}
+
+
+def test_require_bearer_unknown_token_still_401():
+    from fwanalyst_server.auth import require_bearer
+
+    creds = {
+        "server": {
+            "adom_restriction": True,
+            "auth_token": "admin",
+            "tokens": [],
+        }
+    }
+    app = require_bearer(_echo_app, "admin", creds)
+    sent = _call(app, [(b"authorization", b"Bearer garbage")])
+    assert sent[0]["status"] == 401

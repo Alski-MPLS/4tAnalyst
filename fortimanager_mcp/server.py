@@ -35,6 +35,7 @@ from typing import Any
 import yaml
 from mcp.server.fastmcp import FastMCP
 
+from fwanalyst_server.context import allowed_adoms_var
 from fortimanager_mcp import client as _client_module
 from fortimanager_mcp import query as _query
 
@@ -99,6 +100,18 @@ def _fortimanager_client() -> _client_module.FortiManagerClient:
     return c
 
 
+def _require_adom(adom: str) -> dict | None:
+    """Return error dict if the caller's token does not allow this ADOM, else None.
+
+    Defaults to {"*"} (full access) when the ContextVar has no value — this
+    preserves existing behaviour in stdio/dev mode where no auth middleware runs.
+    """
+    allowed = allowed_adoms_var.get({"*"})
+    if "*" in allowed or adom in allowed:
+        return None
+    return {"error": f"ADOM '{adom}' is not in your allowed list."}
+
+
 # ---------------------------------------------------------------------------
 # MCP server
 # ---------------------------------------------------------------------------
@@ -156,16 +169,21 @@ def get_ha_status() -> dict[str, Any]:
 @mcp.tool()
 def get_adoms() -> list[dict[str, Any]]:
     """
-    List all administrative domains (ADOMs) managed by FortiManager.
+    List administrative domains (ADOMs) managed by FortiManager.
 
+    Returns only ADOMs the caller's token is permitted to access.
     Returns a list of objects, each with:
       name      : str  — ADOM name
       status    : str  — operational status
       os_type   : str  — device OS family managed (FortiOS, etc.)
       desc      : str  — description
     """
+    allowed = allowed_adoms_var.get({"*"})
     with _fortimanager_client() as c:
-        return _query.list_adoms(c)
+        adoms = _query.list_adoms(c)
+    if "*" in allowed:
+        return adoms
+    return [a for a in adoms if a["name"] in allowed]
 
 
 # ---------------------------------------------------------------------------

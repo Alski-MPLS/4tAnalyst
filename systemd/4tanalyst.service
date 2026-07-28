@@ -1,17 +1,17 @@
 [Unit]
-Description=FW-Analyst unified MCP server (streamable-HTTP + bearer auth)
+Description=4tAnalyst unified MCP server (streamable-HTTP + bearer auth)
 After=network.target
 
 [Service]
 Type=simple
-User=fw-analyst
-WorkingDirectory=/opt/fw-analyst
+User=4tanalyst
+WorkingDirectory=/opt/4tanalyst
 Environment=MCP_TRANSPORT=http
 Environment=FASTMCP_HOST=0.0.0.0
 Environment=FASTMCP_PORT=8000
 # Set the auth token in an env file readable only by the service user;
 # never commit it. FW_ANALYST_TOKEN overrides credentials.yaml server.auth_token.
-EnvironmentFile=/etc/fw-analyst/env
+EnvironmentFile=/etc/4tanalyst/env
 # Adjust ExecStart to point at the correct Python/uv environment on the host
 ExecStart=/usr/bin/env uv run python -m fwanalyst_server
 Restart=on-failure

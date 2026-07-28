@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Quick smoke test for the unified FW-Analyst server: unauthenticated requests
+# Quick smoke test for the unified 4tAnalyst server: unauthenticated requests
 # must get 401; the configured token must get through (any non-401).
 # Usage: ./scripts/smoke-test.sh   (FW_ANALYST_TOKEN defaults to dev-local-token)
 set -euo pipefail

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pure-Python smoke test for the unified FW-Analyst server.
+"""Pure-Python smoke test for the unified 4tAnalyst server.
 
 Checks that http://localhost:8000/mcp
   1. rejects unauthenticated requests with 401, and

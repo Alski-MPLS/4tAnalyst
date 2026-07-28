@@ -291,7 +291,7 @@ def render_html(data: dict) -> str:
 <body>
 <div class="wrap">
   <header>
-    <div class="kicker">FW-Analyst · /analyze-request</div>
+    <div class="kicker">4tAnalyst · /analyze-request</div>
     <h1>Firewall Request Analysis</h1>
     <div class="meta">Ticket: <code>{esc(ticket)}</code></div>
   </header>

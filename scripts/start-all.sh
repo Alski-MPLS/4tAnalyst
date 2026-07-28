@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start the unified FW-Analyst MCP server for local development.
+# Start the unified 4tAnalyst MCP server for local development.
 # Usage: ./scripts/start-all.sh
 # Set FW_ANALYST_TOKEN to override the dev token.
 set -euo pipefail

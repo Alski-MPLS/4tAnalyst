@@ -35,7 +35,7 @@ No internet access is required.
 sudo dnf install -y python3.11 git curl
 
 # Ubuntu 22.04
-sudo apt update && sudo apt install -y python3.11 python3.11-venv git curl
+sudo apt update && sudo apt install -y python3.11 git curl
 
 # Install uv (Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -45,13 +45,15 @@ source ~/.bashrc
 ### 2. Clone the repository
 
 ```bash
-git clone <your-internal-repo-url> /opt/fw-analyst
-cd /opt/fw-analyst
+git clone <your-internal-repo-url> /opt/4tanalyst
+cd /opt/4tanalyst
 ```
 
 ### 3. Create a virtual environment
 
 ```bash
+# Optional — only needed for IDE integration (VS Code, PyCharm).
+# uv run works without an activated venv.
 uv venv .venv
 source .venv/bin/activate
 ```
@@ -89,7 +91,7 @@ For production, use Docker Compose — see `docker-compose.yml` in the repositor
 From the server, verify auth is enforced using either the pure-Python tester or the shell script:
 
 ```bash
-python3 scripts/run_smoke.py   # asserts 401 without token, non-401 with
+uv run python scripts/run_smoke.py   # asserts 401 without token, non-401 with
 # or
 ./scripts/smoke-test.sh
 ```
@@ -113,11 +115,11 @@ Developer helper scripts (local dev)
 - scripts/smoke-test.sh — quick curl-based auth check against port 8000
   - Usage: ./scripts/smoke-test.sh
 - scripts/run_smoke.py — pure-Python smoke tester (no extra packages)
-  - Usage: python3 scripts/run_smoke.py
+  - Usage: uv run python scripts/run_smoke.py
 
 Systemd template (VM deployment, e.g. RHEL)
 
-- A systemd unit template for the unified server is provided at `systemd/fw-analyst.service` (one unit — `MCP_TRANSPORT=http` plus `FW_ANALYST_TOKEN` via EnvironmentFile). Adjust ExecStart and paths for your host environment.
+- A systemd unit template for the unified server is provided at `systemd/4tanalyst.service` (one unit — `MCP_TRANSPORT=http` plus `FW_ANALYST_TOKEN` via EnvironmentFile). Adjust ExecStart and paths for your host environment.
 
 If you prefer to maintain your own start script, the commands below show what scripts/start-all.sh runs:
 
@@ -141,7 +143,7 @@ Download from [claude.ai/code](https://claude.ai/code). Available for macOS, Win
 ### 2. Clone the repo (for skills and config)
 
 ```bash
-git clone <your-internal-repo-url> ~/fw-analyst
+git clone <your-internal-repo-url> ~/4tanalyst
 ```
 
 Or just copy the `.claude/` folder from the repo root to any working directory where you'll run Claude Code.
@@ -152,7 +154,7 @@ See [Configuration — Engineer workstations](configuration.md#engineer-workstat
 
 ### 4. Verify the connection
 
-Open the `fw-analyst` directory in Claude Code and type:
+Open the `4tAnalyst` directory in Claude Code and type:
 
 ```
 /check-policy 10.1.0.1 10.2.0.1

@@ -48,7 +48,7 @@ If it still shows a placeholder (`.claude/mcp_servers.json.example`), copy it to
 ```json
 {
   "mcpServers": {
-    "fw-analyst": {
+    "4tanalyst": {
       "type": "http",
       "url": "https://<central-server>:8000/mcp",
       "headers": { "Authorization": "Bearer <your-token-here>" }

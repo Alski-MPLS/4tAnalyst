@@ -13,7 +13,7 @@ Environment=FASTMCP_PORT=8000
 # never commit it. FW_ANALYST_TOKEN overrides credentials.yaml server.auth_token.
 EnvironmentFile=/etc/4tanalyst/env
 # Adjust ExecStart to point at the correct Python/uv environment on the host
-ExecStart=/usr/bin/env uv run python -m fwanalyst_server
+ExecStart=/opt/4tanalyst/.venv/bin/python -m fwanalyst_server
 Restart=on-failure
 RestartSec=5
 

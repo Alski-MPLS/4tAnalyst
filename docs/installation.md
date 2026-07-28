@@ -37,9 +37,8 @@ sudo dnf install -y python3.11 git curl
 # Ubuntu 22.04
 sudo apt update && sudo apt install -y python3.11 git curl
 
-# Install uv (Python package manager) — install as root so it's available system-wide
-sudo curl -LsSf https://astral.sh/uv/install.sh | sh
-source ~/.bashrc
+# Install uv (Python package manager) system-wide so all users (including 4tanalyst) can use it
+curl -LsSf https://astral.sh/uv/install.sh | sudo UV_INSTALL_DIR=/usr/local/bin sh
 ```
 
 ### 2. Create the service account
@@ -66,21 +65,25 @@ sudo -u 4tanalyst bash -c "
 
 > All subsequent setup commands must run as the `4tanalyst` user (`sudo -u 4tanalyst`) or from within `sudo -u 4tanalyst bash`. Never run them as root or your own account — doing so will create files owned by the wrong user.
 
-### 4. Create a virtual environment
+### 4. Create a virtual environment and install packages
+
+`uv` must be told to use the `4tanalyst` home directory and to ignore any config files from the installing user's account:
 
 ```bash
-# Optional — only needed for IDE integration (VS Code, PyCharm).
-# uv run works without an activated venv.
-sudo -u 4tanalyst bash -c "cd /opt/4tanalyst && uv venv .venv"
-```
-
-### 5. Install all MCP server packages
-
-```bash
-sudo -u 4tanalyst bash -c "cd /opt/4tanalyst && uv pip install \
+sudo -u 4tanalyst bash -c "HOME=/opt/4tanalyst UV_NO_CONFIG=1 /usr/local/bin/uv venv --python 3.11 /opt/4tanalyst/.venv && \
+    cd /opt/4tanalyst && HOME=/opt/4tanalyst UV_NO_CONFIG=1 /usr/local/bin/uv pip install \
     -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
     -e intake_mcp/ -e zone_mcp/ -e planner/ -e fwanalyst_server/"
 ```
+
+Verify all 7 packages installed into the venv:
+
+```bash
+sudo -u 4tanalyst bash -c "HOME=/opt/4tanalyst UV_NO_CONFIG=1 /usr/local/bin/uv pip list --python /opt/4tanalyst/.venv/bin/python" | \
+    grep -E "standards|fortimanager|feedback|intake|zone|planner|fwanalyst"
+```
+
+You should see all 7 packages listed with their paths under `/opt/4tanalyst`.
 
 ### 6. Configure credentials
 
@@ -100,7 +103,7 @@ For initial testing, start the server manually. Host/port are set via
 sudo -u 4tanalyst bash -c "
   cd /opt/4tanalyst &&
   MCP_TRANSPORT=http FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8000 \
-    FW_ANALYST_TOKEN=<token> uv run python -m fwanalyst_server
+    FW_ANALYST_TOKEN=<token> /opt/4tanalyst/.venv/bin/python -m fwanalyst_server
 "
 ```
 

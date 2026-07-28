@@ -6,20 +6,20 @@ version: '3.8'
 services:
   standards:
     image: python:3.11-slim
-    container_name: fw_standards
-    working_dir: /opt/fw-analyst
+    container_name: 4tanalyst_standards
+    working_dir: /opt/4tanalyst
     volumes:
-      - ./:/opt/fw-analyst:cached
+      - ./:/opt/4tanalyst:cached
     command: sh -c "uv pip install -e standards_mcp/ && uv run mcp run standards_mcp/server.py --transport sse --port 8000"
     ports:
       - 8000:8000
 
   fortimanager:
     image: python:3.11-slim
-    container_name: fw_fortimanager
-    working_dir: /opt/fw-analyst
+    container_name: 4tanalyst_fortimanager
+    working_dir: /opt/4tanalyst
     volumes:
-      - ./:/opt/fw-analyst:cached
+      - ./:/opt/4tanalyst:cached
     command: sh -c "uv pip install -e fortimanager_mcp/ && uv run mcp run fortimanager_mcp/server.py --transport sse --port 8001"
     ports:
       - 8001:8001

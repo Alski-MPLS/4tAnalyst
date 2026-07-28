@@ -1,8 +1,8 @@
 services:
   fwanalyst:
-    image: fw-analyst-dev:latest
-    container_name: fw_analyst
-    working_dir: /opt/fw-analyst
+    image: 4tanalyst-dev:latest
+    container_name: 4tanalyst
+    working_dir: /opt/4tanalyst
     command: python -m fwanalyst_server
     environment:
       MCP_TRANSPORT: http
@@ -12,7 +12,7 @@ services:
     ports:
       - 8000:8000
     volumes:
-      - ./:/opt/fw-analyst:cached
+      - ./:/opt/4tanalyst:cached
 
 # Note: the container mounts the repo so local edits are visible; for CI use
 # docker-compose.ci.yml (built image, no mounts). The per-package servers can

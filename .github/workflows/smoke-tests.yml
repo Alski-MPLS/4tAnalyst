@@ -24,7 +24,7 @@ jobs:
           context: .
           file: Dockerfile.dev
           push: false
-          tags: fw-analyst-dev:latest
+          tags: 4tanalyst-dev:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -63,7 +63,7 @@ jobs:
 
       - name: Start services via docker-compose (CI)
         run: |
-          docker build -f Dockerfile.dev -t fw-analyst-dev:latest .
+          docker build -f Dockerfile.dev -t 4tanalyst-dev:latest .
           docker compose -f docker-compose.ci.yml up -d
 
       - name: Wait for readiness and run smoke tests
@@ -82,7 +82,7 @@ jobs:
           done
 
           export FW_ANALYST_TOKEN=ci-smoke-token
-          python3 scripts/run_smoke.py || rc=$?
+          uv run python scripts/run_smoke.py || rc=$?
           scripts/smoke-test.sh || rc=$?
           rc=${rc:-0}
 

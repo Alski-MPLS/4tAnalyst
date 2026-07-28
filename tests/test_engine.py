@@ -587,9 +587,43 @@ def test_group_append_alternative_in_payload():
     validate_payload(payload)
     entry = payload["cli"]["per_firewall"][0]
     alt = entry["alternative"]
+
+    # identity fields — to_report_payload must not drop or rename these
     assert alt["group"] == "GRP_PUB"
+    assert alt["policy_id"] == 20
+    assert alt["policy_name"] == "publish-hosts"
+    assert alt["package"] == "pkgA"
+    assert alt["side"] == "destination"
+
+    # summary is constructed at serialisation time from the fields above
+    assert "20" in alt["summary"]
+    assert "GRP_PUB" in alt["summary"]
+    assert "destination" in alt["summary"]
+
+    # CLI correctness — append member, not set member (set would wipe existing members)
     assert "append member" in alt["group_cli"]
+    assert "GRP_PUB" in alt["group_cli"]
+    assert "set member" not in alt["group_cli"]
+
+    # new address object CLI must be present and come before the group append
+    assert alt["member_cli"]
+    assert alt["member_names"]
+
+    # blast radius: both direct (30) and nested-via-GRP_PARENT (40) are present;
+    # the triggering rule itself (20) must be excluded
     assert {a["policy_id"] for a in alt["affected_rules"]} == {30, 40}
+
+    # each affected-rule dict must carry the keys render_report.py reads
+    for ar in alt["affected_rules"]:
+        assert "policy_id" in ar
+        assert "name" in ar
+        assert "package" in ar
+        assert "side" in ar
+        assert "via" in ar
+        assert "status" in ar
+
+    # at least one warning about the blast radius must survive serialisation
+    assert any("other rule" in w for w in alt["warnings"])
 
 
 def test_group_append_not_offered_for_negated_side():

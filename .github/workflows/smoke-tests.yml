@@ -82,7 +82,7 @@ jobs:
           done
 
           export FW_ANALYST_TOKEN=ci-smoke-token
-          uv run python scripts/run_smoke.py || rc=$?
+          python3 scripts/run_smoke.py || rc=$?
           scripts/smoke-test.sh || rc=$?
           rc=${rc:-0}
 

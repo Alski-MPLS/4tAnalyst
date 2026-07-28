@@ -24,7 +24,7 @@ The server needs outbound access to:
 - 4THealth server IP on port 443
 - NetBrain server IP on port 443 (when the integration is available)
 
-Engineer laptops need inbound access to the MCP server on port 8000 only (the unified fwanalyst_server; put TLS in front of it — see [Configuration](configuration.md)).
+Engineer laptops need inbound access to the MCP server on port 443 only (via the nginx TLS reverse proxy — see [TLS Setup](tls-setup.md)). Port 8000 should be restricted to localhost once nginx is in place.
 
 No internet access is required.
 
@@ -57,7 +57,7 @@ Because `useradd` pre-creates `/opt/4tanalyst`, `git clone` will refuse to use i
 sudo -u 4tanalyst bash -c "
   cd /opt/4tanalyst &&
   git init &&
-  git remote add origin https://gitlab.com/xcel-master/network-organization/network-security/4tanalyst.git &&
+  git remote add origin <repo-url> &&
   git fetch &&
   git checkout main
 "
@@ -202,7 +202,7 @@ Download from [claude.ai/code](https://claude.ai/code). Available for macOS, Win
 ### 2. Clone the repo (for skills and config)
 
 ```bash
-git clone https://gitlab.com/xcel-master/network-organization/network-security/4tanalyst.git ~/4tanalyst
+git clone <repo-url> ~/4tanalyst
 ```
 
 Or just copy the `.claude/` folder from the repo root to any working directory where you'll run Claude Code.

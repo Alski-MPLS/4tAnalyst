@@ -139,11 +139,11 @@ ZonePolicyError: 4THealth API unavailable: policy_db.json not found
 To see server-level logs, run a server manually with logging enabled:
 
 ```bash
-PYTHONUNBUFFERED=1 uv run python -m zone_mcp.server 2>&1 | tee zone_mcp.log
+sudo -u 4tanalyst bash -c "PYTHONUNBUFFERED=1 /opt/4tanalyst/.venv/bin/python -m zone_mcp.server 2>&1 | tee /tmp/zone_mcp.log"
 ```
 
-For SSE servers, add Python logging configuration:
+For the unified server with debug logging:
 
 ```bash
-PYTHONUNBUFFERED=1 LOG_LEVEL=DEBUG MCP_TRANSPORT=http FASTMCP_PORT=8000 FW_ANALYST_TOKEN=<token> uv run python -m fwanalyst_server
+sudo -u 4tanalyst bash -c "PYTHONUNBUFFERED=1 LOG_LEVEL=DEBUG MCP_TRANSPORT=http FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8000 FW_ANALYST_TOKEN=<token> /opt/4tanalyst/.venv/bin/python -m fwanalyst_server"
 ```

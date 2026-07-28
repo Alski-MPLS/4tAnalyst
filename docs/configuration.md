@@ -79,7 +79,7 @@ Create a file at `.claude/mcp_servers.json` in the repo root (or copy the exampl
 ```json
 {
   "mcpServers": {
-    "fw-analyst": {
+    "4tanalyst": {
       "type": "http",
       "url": "https://<central-server>:8000/mcp",
       "headers": { "Authorization": "Bearer <FW_ANALYST_TOKEN>" }

@@ -111,7 +111,7 @@ To grant full access (e.g., a second admin or a tester): `adoms: ["*"]`.
 After editing `credentials.yaml`, restart the unified server for the change to take effect:
 
 ```bash
-systemctl restart fw-analyst   # or however the server is managed at your site
+systemctl restart 4tanalyst   # or however the server is managed at your site
 ```
 
 ### Sending the token to the engineer
@@ -120,7 +120,7 @@ Send the token over a secure channel — encrypted email, a privileged ticket in
 
 Tell the engineer:
 - Their token value (64 hex chars)
-- The central server hostname and port (e.g., `fw-analyst.internal.example.com:8000`)
+- The central server hostname and port (e.g., `4tanalyst.internal.example.com:8000`)
 - Which ADOMs they have access to, so they can verify
 - To direct them to `docs/workstation-onboarding.md` if they need setup instructions
 

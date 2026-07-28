@@ -90,7 +90,7 @@ Note the difference between the two paths: `/check-policy` (direct 4THealth quer
 
 **Symptom:**
 ```
-FileNotFoundError: credentials.yaml not found at /opt/fw-analyst/credentials.yaml
+FileNotFoundError: credentials.yaml not found at /opt/4tanalyst/credentials.yaml
 ```
 
 **Fix:** Copy the example file and fill it in:

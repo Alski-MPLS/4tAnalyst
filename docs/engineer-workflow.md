@@ -21,8 +21,8 @@ Everything else — zone verdicts, FortiManager rule search, naming/logging chec
 Rather than a full clone, use a sparse checkout so you only pull down `.claude/` and `scripts/` — not the server packages, tests, or docs you don't need:
 
 ```bash
-git clone --filter=blob:none --sparse <repo-url> fw-analyst-workstation
-cd fw-analyst-workstation
+git clone --filter=blob:none --sparse <repo-url> 4tanalyst-workstation
+cd 4tanalyst-workstation
 git sparse-checkout set .claude scripts
 ```
 
@@ -34,7 +34,7 @@ To pick up updates later (new/changed skills, fixes to the render script), just 
 git pull
 ```
 
-from inside `fw-analyst-workstation`.
+from inside `4tanalyst-workstation`.
 
 ### Install Claude Code
 
@@ -49,7 +49,7 @@ If it still shows a placeholder (`.claude/mcp_servers.json.example`), copy it to
 ```json
 {
   "mcpServers": {
-    "fw-analyst": {
+    "4tanalyst": {
       "type": "http",
       "url": "https://<central-server>:8000/mcp",
       "headers": { "Authorization": "Bearer <FW_ANALYST_TOKEN>" }
@@ -62,7 +62,7 @@ Use `https://`, not `http://` — plain HTTP is not acceptable for this data in 
 
 ### Verify connectivity
 
-From inside your `fw-analyst-workstation` checkout, start Claude Code and run:
+From inside your `4tanalyst-workstation` checkout, start Claude Code and run:
 
 ```
 /check-policy 10.0.0.1 10.0.0.2 tcp/443
@@ -233,7 +233,7 @@ Central MCP Server (fwanalyst_server, port 8000)
 
 **Causes and fixes:**
 
-1. Central server is down or the unified service crashed. SSH to the central server and check: `systemctl status fw-analyst`. Restart if needed.
+1. Central server is down or the unified service crashed. SSH to the central server and check: `systemctl status 4tanalyst`. Restart if needed.
 2. A `401 Unauthorized` means the bearer token in your `mcp_servers.json` is missing, wrong, or revoked — ask the team lead for a new token. If you previously had access to an ADOM and now get `{"error": "ADOM '...' is not in your allowed list."}` from a tool, your token's ADOM scope needs updating — contact the admin (see `SECURITY.md` §"Issuing engineer tokens").
 3. Your laptop's `mcp_servers.json` has the wrong hostname or port. Re-read the file and confirm it matches what the team distributed.
 4. Firewall between your laptop and the central server is blocking port 8000. Confirm you are on the correct VPN profile or network segment that allows HTTPS to the central server.

@@ -1,5 +1,5 @@
 """
-The change planning engine — the deterministic core of FW-Analyst.
+The change planning engine — the deterministic core of 4tAnalyst.
 
 plan_change() takes a normalized flow plus named firewalls and computes the
 entire change plan: zone verdict (live 4THealth), existing-rule coverage

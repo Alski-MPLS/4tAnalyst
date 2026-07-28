@@ -1,5 +1,5 @@
 """
-Unified FW-Analyst MCP server.
+Unified 4tAnalyst MCP server.
 
 Aggregates every read-only tool from the five per-domain packages onto one
 FastMCP instance and adds plan_change — the deterministic change planner.
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(
     name="fw-analyst",
     instructions=(
-        "FW-Analyst unified server. For firewall change requests, prefer the "
+        "4tAnalyst unified server. For firewall change requests, prefer the "
         "plan_change tool: it computes the zone verdict, existing-rule "
         "coverage, object reuse, rule insertion point, and FortiGate CLI "
         "deterministically — relay its output verbatim, never recompute or "

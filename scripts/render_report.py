@@ -4,7 +4,7 @@ Render an /analyze-request analysis (JSON payload) into two ticket-attachable
 artifacts: an HTML report and a FortiGate CLI implementation/exception script.
 
 Usage:
-    python3 scripts/render_report.py --data <path-to-json> --outdir output/
+    uv run python scripts/render_report.py --data <path-to-json> --outdir output/
 
 No external dependencies -- stdlib only, matching scripts/run_smoke.py's
 "pure-Python, no external packages" convention.

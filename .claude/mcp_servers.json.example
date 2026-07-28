@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "fw-analyst": {
+    "4tanalyst": {
       "type": "http",
       "url": "https://<central-server>:8000/mcp",
       "headers": {

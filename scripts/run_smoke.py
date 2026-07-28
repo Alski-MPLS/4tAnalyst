@@ -7,7 +7,7 @@ Checks that http://localhost:8000/mcp
 
 Token comes from FW_ANALYST_TOKEN (default: dev-local-token, matching
 docker-compose.yml). No external packages required.
-Usage: python3 scripts/run_smoke.py
+Usage: uv run python scripts/run_smoke.py
 """
 import http.client
 import json

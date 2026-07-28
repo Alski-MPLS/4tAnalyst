@@ -76,7 +76,7 @@ identity planned for Phase 4). Engineers never need direct API access.
 Running tests and CI
 
 - Unit tests: `pytest -q tests/` (planner, matching, insertion, engine, auth, and client tests — no live systems needed)
-- Smoke tests: `python3 scripts/run_smoke.py` or `./scripts/smoke-test.sh` (asserts auth is enforced on port 8000)
+- Smoke tests: `uv run python scripts/run_smoke.py` or `./scripts/smoke-test.sh` (asserts auth is enforced on port 8000)
 - CI: GitHub Actions runs `build-dev-image`, `unit-tests`, and `smoke-tests` on pushes and PRs to `main`.
 
 ## Documentation

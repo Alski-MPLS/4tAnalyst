@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1
-WORKDIR /opt/fw-analyst
+WORKDIR /opt/4tanalyst
 
 # Install uv and editable packages
 COPY standards_mcp/ standards_mcp/
@@ -35,4 +35,4 @@ RUN python -m pip install -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp
 EXPOSE 8000
 
 # Default: print help — docker-compose will override with the server command
-CMD ["/bin/sh","-c","echo 'FW-Analyst dev image ready' && sleep infinity"]
+CMD ["/bin/sh","-c","echo '4tAnalyst dev image ready' && sleep infinity"]

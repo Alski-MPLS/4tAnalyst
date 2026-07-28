@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "fwanalyst-server"
 version = "0.1.0"
-description = "Unified authenticated MCP server for FW-Analyst (all tools + deterministic change planner)"
+description = "Unified authenticated MCP server for 4tAnalyst (all tools + deterministic change planner)"
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.0.0",

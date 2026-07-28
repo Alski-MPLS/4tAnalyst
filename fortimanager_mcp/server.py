@@ -446,7 +446,7 @@ def list_device_vdoms(adom: str, device: str) -> list[dict[str, Any]]:
     device : str  — FortiGate device name (from get_devices)
 
     Returns each VDOM's name, type, operating mode, and status. Most
-    fw-analyst flows target "root" implicitly (see get_interface_map /
+    4tAnalyst flows target "root" implicitly (see get_interface_map /
     get_routing_table), but multi-VDOM devices route traffic per-VDOM —
     use this to confirm which VDOM a flow actually traverses.
     """

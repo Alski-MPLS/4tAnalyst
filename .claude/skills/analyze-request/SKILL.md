@@ -86,7 +86,7 @@ tables/headers, but never alter values):
 Write the payload to a temp JSON file (scratch directory) and run:
 
 ```
-python3 scripts/render_report.py --data <temp-json-path> --outdir output/
+uv run python scripts/render_report.py --data <temp-json-path> --outdir output/
 ```
 
 It prints the `report.html` and `implementation.conf` paths on success.

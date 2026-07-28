@@ -36,7 +36,7 @@ Short, actionable repository-specific guidance for Copilot/assistant sessions.
 
 - Tests & lint:
   - pytest -q tests/   # full suite, no live systems needed
-  - python3 scripts/run_smoke.py   # smoke check; server must be running,
+  - uv run python scripts/run_smoke.py   # smoke check; server must be running,
     asserts 401 without a token, 200 with one.
 
 2) High-level architecture (big picture)

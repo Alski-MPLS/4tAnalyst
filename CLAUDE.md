@@ -41,7 +41,7 @@ pytest -q tests/test_engine.py tests/test_insertion.py  # just the planner
 uv run python standards_mcp/build_policy_db.py
 
 # Smoke check (server must be running; asserts 401 without token, 200 with)
-python3 scripts/run_smoke.py
+uv run python scripts/run_smoke.py
 ```
 
 ## Architecture
@@ -218,7 +218,7 @@ CI (`smoke-tests.yml`) runs `unit-tests` (full `pytest -q tests/` with all packa
 - **`Dockerfile.dev`** — dev image used by CI and local docker-compose
 - **`docker-compose.yml`** — local dev: mounts repo for live edits
 - **`docker-compose.ci.yml`** — CI: built image, no mounts, minimal env
-- **`systemd/fw-analyst.service`** — systemd unit template for the unified server (VM deployment)
+- **`systemd/4tanalyst.service`** — systemd unit template for the unified server (VM deployment)
 - **`scripts/start-all.sh`** — local dev startup helper
 - **`scripts/smoke-test.sh`** + **`scripts/run_smoke.py`** — auth-aware health checks (port 8000: expect 401 without token, non-401 with)
 - **`scripts/render_report.py`** — stdlib-only renderer invoked by `/analyze-request` Step 7. Takes a JSON payload (`--data <path>`) and writes `report.html` + `implementation.conf` under `output/<ticket_id_or_timestamp>/`. No third-party dependencies — matches `run_smoke.py`'s zero-dependency convention. Tested via `tests/test_render_report.py`.

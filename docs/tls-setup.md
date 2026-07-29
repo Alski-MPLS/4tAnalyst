@@ -46,7 +46,7 @@ sudo openssl req -x509 -nodes -newkey rsa:4096 \
 sudo chmod 600 /etc/4tanalyst/tls/server.key
 ```
 
-Replace `<server-ip>` with the server's IP address (e.g. `10.137.12.9`). The SAN extension is required — modern clients reject certs without it.
+Replace `<server-ip>` with the server's IP address (e.g. `10.0.0.1`). The SAN extension is required — modern clients reject certs without it.
 
 ### 2. Configure nginx
 

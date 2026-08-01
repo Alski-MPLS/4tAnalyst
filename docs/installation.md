@@ -199,17 +199,24 @@ Engineers need only Claude Code — no Python, no API credentials, no local serv
 
 Download from [claude.ai/code](https://claude.ai/code). Available for macOS, Windows (native and WSL2), and Linux.
 
-### 2. Clone the repo (for skills and config)
+### 2. Get a slim checkout (skills and config only)
 
 ```bash
-git clone <repo-url> ~/4tanalyst
+git clone --filter=blob:none --sparse <repo-url> 4tAnalyst-workstation
+cd 4tAnalyst-workstation
+git sparse-checkout set .claude scripts .mcp.json.example
 ```
-
-Or just copy the `.claude/` folder from the repo root to any working directory where you'll run Claude Code.
 
 ### 3. Configure MCP server connections
 
-See [Configuration — Engineer workstations](configuration.md#engineer-workstations) for how to point Claude Code at the central server.
+Copy the example and fill in the central server hostname and your bearer token:
+
+```bash
+cp .mcp.json.example .mcp.json
+# Edit .mcp.json — replace <central-server> and <your-token-here>
+```
+
+See [Configuration — Engineer workstations](configuration.md#engineer-workstations) for the full config reference, and `docs/workstation-onboarding.md` for the step-by-step setup.
 
 ### 4. Verify the connection
 

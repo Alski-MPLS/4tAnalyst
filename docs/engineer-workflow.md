@@ -23,7 +23,7 @@ Rather than a full clone, use a sparse checkout so you only pull down `.claude/`
 ```bash
 git clone --filter=blob:none --sparse <repo-url> 4tanalyst-workstation
 cd 4tanalyst-workstation
-git sparse-checkout set .claude scripts
+git sparse-checkout set .claude scripts .mcp.json.example
 ```
 
 Your team access to this repo should be **read-only** — engineers use the checkout, they don't push changes to skills or server code. If you spot a bug in a skill or the naming conventions it enforces, report it to the FW engineering team (see `CONTRIBUTING.md`) rather than editing your local copy.
@@ -44,14 +44,14 @@ Claude Code runs in your terminal. Install it from [claude.ai/code](https://clau
 
 The MCP server list lives at `.claude/mcp_servers.json` **inside the checkout you just created** — it's part of the sparse-checkout, so if the team has already committed the real central-server hostname there, you have nothing to configure: it just works after `git pull`.
 
-If it still shows a placeholder (`.claude/mcp_servers.json.example`), copy it to `.claude/mcp_servers.json` and fill in the real hostname:
+If it still shows a placeholder (`.mcp.json.example`), copy it to `.mcp.json` and fill in the real hostname:
 
 ```json
 {
   "mcpServers": {
     "4tanalyst": {
       "type": "http",
-      "url": "https://<central-server>:8000/mcp",
+      "url": "https://<central-server>/mcp",
       "headers": { "Authorization": "Bearer <FW_ANALYST_TOKEN>" }
     }
   }

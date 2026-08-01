@@ -41,9 +41,13 @@ You will put this token into the `mcp_servers.json` file in the next step.
 
 ## 4. Point Claude Code at the central server
 
-The server list lives at `.claude/mcp_servers.json`, inside the checkout. If the team has already committed the real hostname there, `git pull` is all you need.
+Copy the example config and fill in your hostname and token:
 
-If it still shows a placeholder (`.claude/mcp_servers.json.example`), copy it to `.claude/mcp_servers.json` and fill in the real hostname and token the admin gave you:
+```bash
+cp .claude/mcp_servers.json.example .claude/mcp_servers.json
+```
+
+Then edit `.claude/mcp_servers.json` and replace the two placeholders:
 
 ```json
 {
@@ -60,6 +64,8 @@ If it still shows a placeholder (`.claude/mcp_servers.json.example`), copy it to
 Replace `<central-server>` with the hostname the admin provides and `<your-token-here>` with the 64-character token from Step 3.
 
 Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.).
+
+`mcp_servers.json` is gitignored — your token will never be committed to the repo.
 
 ## 5. Verify
 

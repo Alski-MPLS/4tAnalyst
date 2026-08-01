@@ -72,27 +72,31 @@ All credential paths can be overridden with environment variables. This is usefu
 
 Engineers connect to the central server via Claude Code's MCP configuration. No credentials are stored on workstations.
 
-### Option A: Project-level config (recommended)
+### Project-level config (required)
 
-Create a file at `.claude/mcp_servers.json` in the repo root (or copy the example from `docs/`):
+Create `.mcp.json` in the workstation checkout root (copy from the example shipped in the repo):
+
+```bash
+cp .mcp.json.example .mcp.json
+```
+
+Then fill in the real hostname and your bearer token:
 
 ```json
 {
   "mcpServers": {
     "4tanalyst": {
       "type": "http",
-      "url": "https://<central-server>:8000/mcp",
-      "headers": { "Authorization": "Bearer <FW_ANALYST_TOKEN>" }
+      "url": "https://4tanalyst.xcelenergy.com/mcp",
+      "headers": { "Authorization": "Bearer <your-token-here>" }
     }
   }
 }
 ```
 
-Replace `<central-server-ip>` with the actual IP or hostname of your central server. If you set up a reverse proxy with TLS (recommended for production), use `https://` and the proxy URL instead.
+`.mcp.json` is gitignored — your token will never be committed. Use `https://` on port 443 (nginx terminates TLS and proxies to the internal uvicorn process on port 8000 — do not connect to port 8000 directly from workstations).
 
-### Option B: Global Claude Code config
-
-Add the same `mcpServers` block to `~/.claude/claude_desktop_config.json` if you want the servers available across all projects, not just this one.
+See `docs/workstation-onboarding.md` for the full step-by-step setup including how to request a bearer token.
 
 ### Verifying the connection
 

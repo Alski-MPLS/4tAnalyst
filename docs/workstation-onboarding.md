@@ -11,7 +11,7 @@ A sparse checkout pulls down only the slash commands and the local report-render
 ```bash
 git clone --filter=blob:none --sparse <repo-url> 4tAnalyst-workstation
 cd 4tAnalyst-workstation
-git sparse-checkout set .claude scripts
+git sparse-checkout set .claude scripts .mcp.json.example
 ```
 
 Your team access to this repo is **read-only**. If you spot a bug in a skill or a naming rule it enforces, report it to the FW engineering team (see `CONTRIBUTING.md`) rather than editing your local copy.
@@ -35,7 +35,7 @@ The token is a random hex string (64 characters). Treat it as a password:
 - Do not commit it to any file in the repo
 - If you suspect it was exposed, contact the admin immediately to rotate it
 
-You will put this token into the `mcp_servers.json` file in the next step.
+You will put this token into the `.mcp.json` file in the next step.
 
 > **Admins:** see the **Issuing engineer tokens** section in `SECURITY.md` for the provisioning procedure.
 
@@ -44,17 +44,17 @@ You will put this token into the `mcp_servers.json` file in the next step.
 Copy the example config and fill in your hostname and token:
 
 ```bash
-cp .claude/mcp_servers.json.example .claude/mcp_servers.json
+cp .mcp.json.example .mcp.json
 ```
 
-Then edit `.claude/mcp_servers.json` and replace the two placeholders:
+Then edit `.mcp.json` and replace the two placeholders:
 
 ```json
 {
   "mcpServers": {
     "4tanalyst": {
       "type": "http",
-      "url": "https://<central-server>:8000/mcp",
+      "url": "https://<central-server>/mcp",
       "headers": { "Authorization": "Bearer <your-token-here>" }
     }
   }
@@ -65,7 +65,7 @@ Replace `<central-server>` with the hostname the admin provides and `<your-token
 
 Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.).
 
-`mcp_servers.json` is gitignored — your token will never be committed to the repo.
+`.mcp.json` is gitignored — your token will never be committed to the repo.
 
 ## 5. Verify
 

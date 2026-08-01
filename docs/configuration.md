@@ -87,7 +87,7 @@ Then fill in the real hostname and your bearer token:
   "mcpServers": {
     "4tanalyst": {
       "type": "http",
-      "url": "https://4tanalyst.internal.example.com/mcp",
+      "url": "https://<central-server>/mcp",
       "headers": { "Authorization": "Bearer <your-token-here>" }
     }
   }

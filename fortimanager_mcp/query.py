@@ -173,7 +173,7 @@ _CATALOG_TTL = 600  # seconds
 
 
 def _cache_key(client: FortiManagerClient, adom: str) -> str:
-    return f"{client._active_host}:{adom}"
+    return f"{getattr(client, '_active_host', id(client))}:{adom}"
 
 
 def build_catalogs(

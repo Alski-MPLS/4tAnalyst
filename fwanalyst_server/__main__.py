@@ -16,6 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from fwanalyst_server.auth import require_bearer
 from fwanalyst_server.rate_limit import rate_limit
+from fwanalyst_server.request_timeout import request_timeout
 from fwanalyst_server.server import mcp
 
 _REPO_ROOT = Path(__file__).parent.parent
@@ -99,6 +100,8 @@ def main() -> None:
 
     creds = _load_creds()
     app = require_bearer(app, _auth_token(), creds)
+    timeout = float(os.getenv("FW_ANALYST_REQUEST_TIMEOUT", "540"))
+    app = request_timeout(app, timeout)
     uvicorn.run(app, host=host, port=port)
 
 

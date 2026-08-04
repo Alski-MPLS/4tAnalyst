@@ -87,7 +87,7 @@ class FortiManagerClient:
 
         self._http = httpx.Client(
             verify=verify_ssl,
-            timeout=30.0,
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0),
             headers={"Content-Type": "application/json"},
         )
 

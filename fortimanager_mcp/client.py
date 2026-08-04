@@ -15,6 +15,7 @@ All methods raise FortiManagerAPIError on connection failure or API-level errors
 """
 
 import logging
+import threading
 from typing import Any
 
 import httpx
@@ -84,10 +85,11 @@ class FortiManagerClient:
         self._active_host: str = ""
         self._active_key: str = ""
         self._request_id = 0
+        self._id_lock = threading.Lock()
 
         self._http = httpx.Client(
             verify=verify_ssl,
-            timeout=30.0,
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0),
             headers={"Content-Type": "application/json"},
         )
 
@@ -151,10 +153,12 @@ class FortiManagerClient:
             raise FortiManagerAPIError("FortiManagerClient.login() must be called first")
 
         base_url = f"https://{self._active_host}:{self._port}{self._JSONRPC_PATH}"
-        self._request_id += 1
+        with self._id_lock:
+            self._request_id += 1
+            request_id = self._request_id
 
         payload: dict[str, Any] = {
-            "id": self._request_id,
+            "id": request_id,
             "method": method,
             "params": [{**params, "url": url_path}],
             "session": None,
@@ -194,7 +198,7 @@ class FortiManagerClient:
         """Fetch all items for a list endpoint using range-based pagination."""
         results = []
         offset = 0
-        limit = 100
+        limit = 500
         extra = extra_params or {}
 
         while True:
@@ -253,8 +257,35 @@ class FortiManagerClient:
     # ------------------------------------------------------------------
 
     def get_policy_packages(self, adom: str) -> list[dict]:
-        """List policy packages in an ADOM."""
-        return self._get_all(f"/pm/pkg/adom/{adom}")
+        """List all leaf policy packages in an ADOM, with full folder paths.
+
+        FortiManager nests packages inside folders (subobj). The policy API
+        path for a nested package uses the full slash-separated folder path,
+        e.g. "PRODUCTION/Perimeter/MNHQGOFWENTM01". This method flattens the
+        tree so callers always get leaf packages with their correct path in the
+        "name" field and scope member preserved for device matching.
+        """
+        raw = self._get_all(f"/pm/pkg/adom/{adom}")
+        return self._flatten_packages(raw, prefix="")
+
+    @staticmethod
+    def _flatten_packages(items: list, prefix: str) -> list[dict]:
+        """Recursively flatten a nested package tree into leaf packages."""
+        result = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name", "")
+            full_path = f"{prefix}/{name}" if prefix else name
+            pkg_type = item.get("type", "")
+            children = item.get("subobj") or []
+            if pkg_type == "pkg":
+                result.append({**item, "name": full_path})
+            elif children:
+                result.extend(FortiManagerClient._flatten_packages(children, full_path))
+            else:
+                result.append({**item, "name": full_path})
+        return result
 
     def get_global_policy_packages(self) -> list[dict]:
         """List global ADOM policy packages (inherited by per-ADOM policies)."""

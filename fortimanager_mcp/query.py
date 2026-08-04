@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from fortimanager_mcp.client import FortiManagerClient, FortiManagerAPIError
@@ -166,15 +167,29 @@ def build_catalogs(
     client: FortiManagerClient, adom: str
 ) -> tuple[AddressCatalog, ServiceCatalog]:
     """Fetch and index all address/service objects for an ADOM (incl. global)."""
+    fetches = {
+        "addr":        lambda: client.get_address_objects(adom),
+        "addr_grp":    lambda: client.get_address_groups(adom),
+        "global_addr": lambda: client.get_global_address_objects(),
+        "global_grp":  lambda: client.get_global_address_groups(),
+        "svc":         lambda: client.get_service_objects(adom),
+        "svc_grp":     lambda: client.get_service_groups(adom),
+    }
+    results: dict[str, list] = {}
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {pool.submit(fn): key for key, fn in fetches.items()}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+
     addr_catalog = AddressCatalog(
-        client.get_address_objects(adom),
-        client.get_address_groups(adom),
-        client.get_global_address_objects(),
-        client.get_global_address_groups(),
+        results["addr"],
+        results["addr_grp"],
+        results["global_addr"],
+        results["global_grp"],
     )
     svc_catalog = ServiceCatalog(
-        client.get_service_objects(adom),
-        client.get_service_groups(adom),
+        results["svc"],
+        results["svc_grp"],
     )
     return addr_catalog, svc_catalog
 

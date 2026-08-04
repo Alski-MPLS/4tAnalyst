@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -160,13 +162,36 @@ def search_devices(
 
 
 # ---------------------------------------------------------------------------
-# Policy search
+# Catalog cache — avoids re-fetching thousands of address/service objects on
+# every plan_change call. TTL defaults to 10 minutes; stale entries are
+# refreshed on next access. Cache is per (host, adom) key.
 # ---------------------------------------------------------------------------
+
+_catalog_cache: dict[str, tuple[float, AddressCatalog, ServiceCatalog]] = {}
+_catalog_lock = threading.Lock()
+_CATALOG_TTL = 600  # seconds
+
+
+def _cache_key(client: FortiManagerClient, adom: str) -> str:
+    return f"{client._active_host}:{adom}"
+
 
 def build_catalogs(
     client: FortiManagerClient, adom: str
 ) -> tuple[AddressCatalog, ServiceCatalog]:
-    """Fetch and index all address/service objects for an ADOM (incl. global)."""
+    """Fetch and index all address/service objects for an ADOM (incl. global).
+
+    Results are cached for _CATALOG_TTL seconds to avoid re-fetching thousands
+    of objects on every plan_change call.
+    """
+    key = _cache_key(client, adom)
+    now = time.monotonic()
+
+    with _catalog_lock:
+        entry = _catalog_cache.get(key)
+        if entry and (now - entry[0]) < _CATALOG_TTL:
+            return entry[1], entry[2]
+
     fetches = {
         "addr":        lambda: client.get_address_objects(adom),
         "addr_grp":    lambda: client.get_address_groups(adom),
@@ -191,6 +216,10 @@ def build_catalogs(
         results["svc"],
         results["svc_grp"],
     )
+
+    with _catalog_lock:
+        _catalog_cache[key] = (time.monotonic(), addr_catalog, svc_catalog)
+
     return addr_catalog, svc_catalog
 
 

@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-05 (3)
+
+### Fixed
+
+#### Startup catalog warm-up to prevent cold-cache MCP transport drops (`fwanalyst_server/__main__.py`)
+
+`plan_change` on a cold cache fetches thousands of address and service objects from FortiManager across all ADOMs before evaluating anything — typically 2–3 minutes on a large ADOM. The MCP SSE stream has no data to write during that window; the client-side SSE reader (or a network TCP-idle timer) drops the connection with `ClosedResourceError` in `standalone_sse_writer`, surfacing as "MCP transport dropped" on the Claude Code workstation.
+
+The fix: when starting in HTTP mode, a background daemon thread (`catalog-warmup`) is launched immediately after the ASGI app is constructed. It logs into FortiManager using `credentials.yaml`, enumerates all ADOMs, and calls `build_catalogs()` for each one — populating `_catalog_cache` so the first real `plan_change` call hits already-warm catalogs and completes in seconds rather than minutes.
+
+- Warm-up runs in a daemon thread so it never blocks server startup or uvicorn.
+- Per-ADOM failures are logged as warnings and do not abort other ADOMs or the server.
+- Warm-up is skipped entirely in `stdio` mode (development) and when no `fortimanager.hosts` are configured in `credentials.yaml`.
+- Cache TTL remains 10 minutes; after expiry the next caller re-fetches as before.
+
+---
+
 ## [Unreleased] — 2026-08-05 (2)
 
 ### Fixed

@@ -157,7 +157,8 @@ class ServiceCatalog:
         """Name of an existing service object whose ranges equal `ranges`."""
         want = set(ranges)
         for name, obj in self._objects.items():
-            if set(self._ranges_for_object(obj)) == want:
+            resolved = self._ranges_for_object(obj)
+            if resolved is not None and set(resolved) == want:
                 return name
         return None
 
@@ -193,6 +194,16 @@ class ServiceCatalog:
         if "ICMP" in protocol:
             return [PortRange("icmp", 0, 65535)]
         if protocol == "IP":
+            # Objects with protocol=IP and a protocol-number are IP-protocol
+            # typed (e.g. icmp-proto has protocol-number=1). Map known protocol
+            # numbers to their PortRange types so they can be correctly compared
+            # against the requested service. Unknown protocol numbers return None
+            # (unresolvable) so callers treat coverage as uncertain.
+            proto_num = obj.get("protocol-number")
+            if proto_num is not None:
+                _PROTO_NUM_MAP = {1: PortRange("icmp", 0, 65535)}
+                pr = _PROTO_NUM_MAP.get(int(proto_num))
+                return [pr] if pr is not None else None
             return [WILDCARD_RANGE]
 
         ranges: list[PortRange] = []

@@ -124,13 +124,49 @@ def test_catalog_udp_and_tcp_combined():
     assert PortRange("udp", 53, 53) in ranges
 
 
-def test_catalog_icmp_and_ip_protocols_are_wildcards():
-    cat = _catalog([
-        {"name": "PING", "protocol": "ICMP"},
-        {"name": "ALL_IP", "protocol": "IP"},
-    ])
+def test_catalog_icmp_protocol_resolves_to_icmp_range():
+    cat = _catalog([{"name": "PING", "protocol": "ICMP"}])
     assert cat.ranges_for_ref("PING") == [PortRange("icmp", 0, 65535)]
+
+
+def test_catalog_ip_protocol_no_number_is_wildcard():
+    # An IP-typed service object without protocol-number is the ALL service.
+    cat = _catalog([{"name": "ALL_IP", "protocol": "IP"}])
     assert cat.ranges_for_ref("ALL_IP") == [PortRange("ip", 0, 65535)]
+
+
+def test_catalog_ip_protocol_with_icmp_number_resolves_to_icmp():
+    # protocol=IP + protocol-number=1 is icmp-proto — must resolve to ICMP,
+    # not the IP wildcard, so it can never match TCP/UDP requests.
+    cat = _catalog([{"name": "icmp-proto", "protocol": "IP", "protocol-number": 1}])
+    assert cat.ranges_for_ref("icmp-proto") == [PortRange("icmp", 0, 65535)]
+
+
+def test_catalog_ip_protocol_with_unknown_number_is_unresolvable():
+    # protocol=IP + protocol-number=47 (GRE) is not in our map; return None.
+    cat = _catalog([{"name": "GRE", "protocol": "IP", "protocol-number": 47}])
+    assert cat.ranges_for_ref("GRE") is None
+
+
+def test_icmp_proto_service_does_not_match_tcp22():
+    # A policy carrying icmp-proto (protocol=IP, protocol-number=1) must not
+    # report a match against a tcp/22 request — icmp PortRange does not
+    # overlap tcp PortRange.
+    from fortimanager_mcp.matching import AddressCatalog, PolicyMatcher
+    svc_cat = _catalog([{"name": "icmp-proto", "protocol": "IP", "protocol-number": 1}])
+    addr_cat = AddressCatalog([], [])
+    matcher = PolicyMatcher(addr_cat, svc_cat)
+    pol = {
+        "policyid": 1, "action": 1, "status": "enable",
+        "srcaddr": ["all"], "dstaddr": ["all"], "service": ["icmp-proto"],
+        "srcintf": ["any"], "dstintf": ["any"], "schedule": ["always"],
+    }
+    result = matcher.evaluate(pol, "10.1.1.1", "10.9.9.9",
+                              [PortRange("tcp", 22, 22)])
+    assert not result.matched, "icmp-proto must not match tcp/22"
+    assert "icmp-proto" not in result.unknown_refs, (
+        "icmp-proto should resolve cleanly to ICMP range, not be unknown"
+    )
 
 
 def test_catalog_all_name_is_wildcard():

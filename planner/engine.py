@@ -240,6 +240,15 @@ def _plan_firewall(
                     summary["covered_pairs"] = [f"{s} -> {d}" for s, d in full_pairs]
                 fw.covering_rules.append(summary)
             else:
+                # Skip disabled rules — they have no effect on traffic.
+                # Skip rules where the service dimension has no overlap with
+                # the requested service and no unknown service refs; those are
+                # noise (e.g. an ICMP rule when tcp/22 was requested).
+                if any_r.disabled:
+                    continue
+                svc_m, _ = matcher.svc_side(pol, flow.service_ranges)
+                if not svc_m:
+                    continue
                 fw.partial_matches.append(summary)
 
     uncovered = [p for p in pairs if not pair_covered[p]]
@@ -503,7 +512,8 @@ def _group_blast_radius(
 # ---------------------------------------------------------------------------
 
 def _recommendation(plan_status: str, verdict: str, firewalls: list[FirewallPlan],
-                    risk: str, warnings: list[str]) -> str:
+                    risk: str, warnings: list[str],
+                    zone_verdict: dict | None = None) -> str:
     if plan_status == "unknown_no_action":
         return (
             "Zone verdict is UNKNOWN — at least one IP did not resolve to a known "
@@ -518,10 +528,19 @@ def _recommendation(plan_status: str, verdict: str, firewalls: list[FirewallPlan
         )
     lines = []
     if plan_status == "blocked_exception":
+        governing = (zone_verdict or {}).get("governing", [])
+        blocking_policy = next(
+            (g.get("policy_set", "") for g in governing
+             if g.get("access_type", "").startswith("block")),
+            None,
+        )
+        block_detail = (
+            f" Blocked by: \"{blocking_policy}\"." if blocking_policy else ""
+        )
         lines.append(
-            "Zone policy BLOCKS this flow. The generated CLI implements an "
-            "EXCEPTION and must not be pushed until the approval chain "
-            f"(risk level: {risk}) has signed off."
+            f"Zone policy BLOCKS this flow.{block_detail} The generated CLI "
+            "implements an EXCEPTION and must not be pushed until the approval "
+            f"chain (risk level: {risk}) has signed off."
         )
     else:
         lines.append(
@@ -708,7 +727,8 @@ def plan_change(
         else:
             cli_status = "new_rule"
 
-    recommendation = _recommendation(cli_status, verdict, fw_plans, risk, warnings)
+    recommendation = _recommendation(cli_status, verdict, fw_plans, risk, warnings,
+                                      zone_verdict=zone_verdict)
 
     return ChangePlan(
         ticket_id=ticket_id,
@@ -766,6 +786,8 @@ def to_report_payload(plan: ChangePlan) -> dict:
         existing_rules[fw.firewall] = {
             "status": fw.status.upper().replace("_", " "),
             "rules": fw.covering_rules + fw.partial_matches,
+            "covering_rules": fw.covering_rules,
+            "partial_matches": fw.partial_matches,
             "note": note,
         }
 

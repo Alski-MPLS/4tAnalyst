@@ -400,6 +400,30 @@ def test_already_covered_end_to_end():
     assert plan.risk_level == "medium"
 
 
+def test_to_report_payload_splits_covering_and_partial():
+    """to_report_payload must emit separate covering_rules and partial_matches keys."""
+    plan = _run()
+    payload = to_report_payload(plan)
+    validate_payload(payload)
+
+    fw_name = list(payload["existing_rules"].keys())[0]
+    info = payload["existing_rules"][fw_name]
+
+    # Both new keys must be present
+    assert "covering_rules" in info, "covering_rules key missing from payload"
+    assert "partial_matches" in info, "partial_matches key missing from payload"
+
+    # Legacy rules key must still be present (backward compat)
+    assert "rules" in info
+
+    # covering_rules should be non-empty when status is already_covered
+    if info["status"] == "ALREADY COVERED":
+        assert len(info["covering_rules"]) > 0
+
+    # covering_rules + partial_matches must equal rules (same content, split)
+    assert len(info["covering_rules"]) + len(info["partial_matches"]) == len(info["rules"])
+
+
 def test_new_rule_generates_objects_and_policy():
     plan = _run(service="tcp/8443")
     assert plan.cli_status == "new_rule"
@@ -775,3 +799,75 @@ def test_permissive_request_warned_in_plan():
     assert any("ANY service" in w for w in plan.warnings)
     payload = to_report_payload(plan)
     validate_payload(payload)
+
+
+# ---------------------------------------------------------------------------
+# Bug-fix regression: disabled rules and ICMP noise in partial_matches
+# ---------------------------------------------------------------------------
+
+def _make_icmp_proto_svc():
+    return {"name": "icmp-proto", "protocol": "IP", "protocol-number": 1}
+
+
+def test_disabled_rule_not_in_partial_matches():
+    """A disabled rule that overlaps the request must be excluded from
+    partial_matches — disabled rules have no traffic effect."""
+    fmg = EngineFMG(policies=[
+        {"policyid": 5, "name": "disabled-overlap", "status": "disable",
+         "action": 1, "schedule": ["always"],
+         "srcaddr": ["all"], "dstaddr": ["all"], "service": ["ALL"],
+         "srcintf": ["port1"], "dstintf": ["port2"], "logtraffic": 2},
+    ])
+    plan = _run(service="tcp/22", fmg=fmg)
+    fw = plan.firewalls[0]
+    assert not any(r["policy_id"] == 5 for r in fw.partial_matches), (
+        "disabled rule must not appear in partial_matches"
+    )
+    assert not any(r["policy_id"] == 5 for r in fw.covering_rules), (
+        "disabled rule must not appear in covering_rules"
+    )
+
+
+def test_non_overlapping_service_rule_not_in_partial_matches():
+    """A rule whose service has no overlap with the requested service must not
+    appear in partial_matches (e.g. an HTTPS-only rule when ssh/tcp-22 is requested)."""
+    fmg = EngineFMG(policies=[
+        # HTTPS-only rule — no tcp/22 overlap
+        {"policyid": 8, "name": "https-only-rule", "status": "enable",
+         "action": 1, "schedule": ["always"],
+         "srcaddr": ["all"], "dstaddr": ["all"], "service": ["HTTPS"],
+         "srcintf": ["port1"], "dstintf": ["port2"], "logtraffic": 2},
+    ])
+    plan = _run(service="tcp/22", fmg=fmg)
+    fw = plan.firewalls[0]
+    assert not any(r["policy_id"] == 8 for r in fw.partial_matches), (
+        "HTTPS-only rule must not appear in partial_matches for a tcp/22 request"
+    )
+
+
+def test_blocked_recommendation_names_governing_policy():
+    """When zone verdict is BLOCKED, the recommendation must name the blocking
+    policy so engineers know which rule is the source of the block."""
+    zone = EngineZone(
+        verdict="BLOCKED",
+        src_zones=["NSS Corp Internal"],
+        dst_zones=["NSS OT-All"],
+    )
+    # Patch the query method to return a blocking governing policy
+    orig_query = zone.query
+
+    def _query_with_block(src, dst, service="", verbose=True):
+        result = orig_query(src, dst, service, verbose)
+        result[0]["governing"] = [
+            {"policy_set": "OT and CIP-H Block All", "access_type": "block all",
+             "severity": "high"}
+        ]
+        return result
+
+    zone.query = _query_with_block
+
+    plan = _run(verdict="BLOCKED", zone=zone, service="tcp/22")
+    assert plan.cli_status == "blocked_exception"
+    assert "OT and CIP-H Block All" in plan.recommendation, (
+        "Blocking policy name must appear in the recommendation text"
+    )

@@ -8,7 +8,9 @@ Entry point for the unified server.
                                    server.auth_token; env wins)
 """
 
+import logging
 import os
+import threading
 from pathlib import Path
 
 import yaml
@@ -18,6 +20,8 @@ from fwanalyst_server.auth import require_bearer
 from fwanalyst_server.rate_limit import rate_limit
 from fwanalyst_server.request_timeout import request_timeout
 from fwanalyst_server.server import mcp
+
+logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).parent.parent
 _DEFAULT_RATE_LIMIT_MAX = 300
@@ -67,6 +71,55 @@ def _allowed_hosts() -> list[str]:
     return []
 
 
+def _start_catalog_warmup(creds: dict) -> None:
+    """Pre-populate the FortiManager catalog cache in the background.
+
+    plan_change on a cold cache fetches thousands of address/service objects
+    from FortiManager before it can evaluate anything — typically 2–3 minutes
+    on ENTERPRISE-SERVICES-sized ADOMs. The MCP SSE stream has no data to send
+    during that window, and some clients (or network TCP-idle timers) drop the
+    connection before the result arrives. Warming the cache at startup means the
+    first real plan_change call hits populated catalogs and completes in seconds.
+    """
+    fmg_conf = creds.get("fortimanager", {})
+    hosts = fmg_conf.get("hosts", [])
+    if not hosts:
+        return
+
+    def _warm() -> None:
+        try:
+            from fortimanager_mcp.client import FortiManagerClient
+            from fortimanager_mcp.query import build_catalogs, build_policy_snapshot, list_adoms
+
+            primary = hosts[0]
+            secondary = hosts[1] if len(hosts) > 1 else {}
+            client = FortiManagerClient(
+                primary_host=primary.get("host", ""),
+                primary_key=primary.get("api_key", ""),
+                secondary_host=secondary.get("host", ""),
+                secondary_key=secondary.get("api_key", ""),
+                port=fmg_conf.get("port", 443),
+                verify_ssl=fmg_conf.get("verify_ssl", True),
+                version=str(fmg_conf.get("version", "7.4")),
+            )
+            client.login()
+            adoms = [a["name"] for a in list_adoms(client) if a.get("name")]
+            logger.info("Cache warm-up: pre-fetching catalogs and policies for %d ADOM(s): %s",
+                        len(adoms), adoms)
+            for adom in adoms:
+                try:
+                    build_catalogs(client, adom)
+                    build_policy_snapshot(client, adom)
+                    logger.info("Cache warm-up: %s done", adom)
+                except Exception as exc:
+                    logger.warning("Cache warm-up: %s failed — %s", adom, exc)
+        except Exception as exc:
+            logger.warning("Cache warm-up thread failed: %s", exc)
+
+    t = threading.Thread(target=_warm, name="catalog-warmup", daemon=True)
+    t.start()
+
+
 def main() -> None:
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if transport == "stdio":
@@ -92,13 +145,15 @@ def main() -> None:
 
     app = mcp.streamable_http_app()
 
+    creds = _load_creds()
+    _start_catalog_warmup(creds)
+
     max_requests = int(os.getenv("FW_ANALYST_RATE_LIMIT_MAX", str(_DEFAULT_RATE_LIMIT_MAX)))
     if max_requests > 0:
         window = float(os.getenv("FW_ANALYST_RATE_LIMIT_WINDOW_SECONDS",
                                   str(_DEFAULT_RATE_LIMIT_WINDOW)))
         app = rate_limit(app, max_requests, window)
 
-    creds = _load_creds()
     app = require_bearer(app, _auth_token(), creds)
     timeout = float(os.getenv("FW_ANALYST_REQUEST_TIMEOUT", "540"))
     app = request_timeout(app, timeout)

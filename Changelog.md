@@ -4,6 +4,40 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-05 (2)
+
+### Fixed
+
+#### Existing Rules section: ICMP noise, disabled rules, and blocked recommendation (`fortimanager_mcp/matching.py`, `planner/engine.py`)
+
+Three issues made the Existing Rules section misleading and the recommendation unhelpful when zone policy blocks a flow.
+
+**`fortimanager_mcp/matching.py` — `ServiceCatalog._ranges_for_object()`**
+- Fixed: FortiManager service objects with `protocol=IP` and a `protocol-number` field (e.g. `icmp-proto` with `protocol-number: 1`) were incorrectly resolved to the `WILDCARD_RANGE` (`PortRange("ip", 0, 65535)`) — making them appear to cover every TCP/UDP port. Only objects with `protocol=IP` and **no** `protocol-number` are the true ALL wildcard. Objects with a known `protocol-number` (currently ICMP=1) are now resolved to their actual protocol type; objects with an unknown protocol-number return `None` (unresolvable) rather than a false wildcard.
+- Fixed: `exact_match_name()` would raise `TypeError` when `_ranges_for_object()` returned `None`. Added a `None` guard.
+
+**`planner/engine.py` — `_plan_firewall()` partial_matches filter**
+- Fixed: Disabled rules were appearing in partial matches. Rules with `status=disable` now skip the `partial_matches` list entirely — a disabled rule has no effect on traffic and should not appear in analysis.
+- Fixed: Rules whose service dimension has no overlap with the requested service (e.g. an ICMP rule when tcp/22 was requested) were appearing as partial matches. Partial matches are now filtered to only include rules where `matcher.svc_side()` returns `matched=True`, eliminating service-irrelevant noise.
+
+**`planner/engine.py` — `_recommendation()`**
+- Fixed: When zone policy blocks a flow, the recommendation now names the specific blocking policy (e.g. `Blocked by: "NSS OT and CIP-H To and From Internet and IT".`), making it immediately clear to the engineer which policy governs the exception path.
+
+**`tests/conftest.py`** (new)
+- Added `autouse` fixture that clears the `fortimanager_mcp.query._catalog_cache` before and after each test. The cache is keyed on `id(client)` for non-real clients; CPython recycles object ids after GC, causing fake-client instances in one test to hit stale catalogs from prior tests in the same session.
+
+**Tests added** (`tests/test_matching.py`, `tests/test_engine.py`)
+- `test_catalog_icmp_protocol_resolves_to_icmp_range` — ICMP-typed service resolves to `PortRange("icmp", …)`
+- `test_catalog_ip_protocol_no_number_is_wildcard` — bare IP-typed service is the ALL wildcard
+- `test_catalog_ip_protocol_with_icmp_number_resolves_to_icmp` — `icmp-proto` resolves to ICMP range, not wildcard
+- `test_catalog_ip_protocol_with_unknown_number_is_unresolvable` — unknown protocol-number returns None
+- `test_icmp_proto_service_does_not_match_tcp22` — end-to-end: icmp-proto does not match a tcp/22 request
+- `test_disabled_rule_not_in_partial_matches` — disabled rules absent from both covering_rules and partial_matches
+- `test_non_overlapping_service_rule_not_in_partial_matches` — rules with no service overlap excluded from partial_matches
+- `test_blocked_recommendation_names_governing_policy` — blocking policy name present in recommendation text
+
+---
+
 ## [Unreleased] — 2026-08-05
 
 ### Changed

@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/assets/logo.svg" alt="4tAnalyst logo" width="420">
-</p>
+<img alt="4tAnalyst logo" src="docs/assets/logo.svg" width="240">
 
 # 4tAnalyst
 

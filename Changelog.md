@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-05
+
+### Changed
+
+#### Existing Rules section in `report.html` now shows rule detail tables (`scripts/render_report.py`, `planner/engine.py`)
+
+Engineers can now verify "already covered" claims directly in the report instead of having to query FortiManager separately. The Existing Rules section previously showed only `#ID "name"` per rule — insufficient to confirm whether the found rule actually covered the requested source, destination, and service.
+
+**`planner/engine.py` — `to_report_payload()`**
+- The `existing_rules[fw]` payload dict now emits two additional keys alongside the existing merged `"rules"` list:
+  - `"covering_rules"` — rules where every requested flow pair is fully covered (enabled, unconditional, no unknown refs)
+  - `"partial_matches"` — rules that overlap the request but do not fully cover it (e.g. an ICMP rule found when SSH/SNMP were requested, or a rule covering a sub-range of the requested CIDR)
+
+**`scripts/render_report.py` — `render_html()`**
+- Each rule is now rendered as a detail table showing: Policy ID, name, package, enabled/disabled status, source address objects, destination address objects, and service objects
+- Covering rules (green badge) and partial/overlapping matches (amber badge, separate section) are visually distinct
+- Partial matches include a note: "This rule overlaps the request but does not fully cover it — it is not sufficient on its own"
+- Optional rows surface `covered_pairs` (when only some src×dst pairs are covered) and `unknown_refs` (when address/service objects could not be resolved)
+- `status` field handles both string (`"enable"`/`"disable"`) and integer (`1`/`0`) values from FortiManager
+- **Backward compatible:** payloads with only the legacy `"rules"` key are split on `full_cover` at render time — no re-generation required for existing saved payloads
+
+---
+
 ## [Unreleased] — 2026-07-27
 
 ### Added

@@ -170,17 +170,89 @@ def render_html(data: dict) -> str:
         for g in zone.get("governing", [])
     ) or "<li>No governing policy found</li>"
 
+    def _rule_detail_table(r: dict) -> str:
+        """Render one rule as a detail table row-group."""
+        def csv(lst) -> str:
+            if not lst:
+                return "(none)"
+            return ", ".join(esc(v) for v in lst)
+
+        src_td = f"<code>{csv(r.get('source', []))}</code>"
+        dst_td = f"<code>{csv(r.get('destination', []))}</code>"
+        svc_td = f"<code>{csv(r.get('service', []))}</code>"
+        pkg_td = esc(r.get('package', ''))
+        raw_status = r.get('status', 'enable')
+        disabled = raw_status in ('disable', 0)
+        enabled = "Enabled" if not disabled else "<span style='color:var(--blocked)'>Disabled</span>"
+        covered_pairs = r.get('covered_pairs', [])
+        pairs_row = (
+            f"<tr><th>Pairs covered</th><td><code>{esc(', '.join(covered_pairs))}</code></td></tr>"
+            if covered_pairs else ""
+        )
+        unknown_refs = r.get('unknown_refs', [])
+        unknown_row = (
+            f"<tr><th>Unresolved refs</th><td><code>{esc(', '.join(unknown_refs))}</code> "
+            f"<span class='note'>(coverage uncertain)</span></td></tr>"
+            if unknown_refs else ""
+        )
+        return (
+            f"<table class='rule-detail'>"
+            f"<tr><th>Policy</th><td><strong>#{esc(r.get('policy_id', ''))}</strong> "
+            f"\"{esc(r.get('name', ''))}\"</td></tr>"
+            f"<tr><th>Package</th><td>{pkg_td}</td></tr>"
+            f"<tr><th>Status</th><td>{enabled}</td></tr>"
+            f"<tr><th>Source</th><td>{src_td}</td></tr>"
+            f"<tr><th>Destination</th><td>{dst_td}</td></tr>"
+            f"<tr><th>Service</th><td>{svc_td}</td></tr>"
+            f"{pairs_row}{unknown_row}"
+            f"</table>"
+        )
+
     existing_html = ""
     for fw, info in existing.items():
-        rules_html = "".join(
-            f"<li>#{esc(r.get('policy_id', ''))} \"{esc(r.get('name', ''))}\"</li>"
-            for r in info.get("rules", [])
-        ) or "<li>(none)</li>"
+        if "covering_rules" in info:
+            covering = info["covering_rules"]
+            partial = info.get("partial_matches", [])
+        else:
+            all_rules = info.get("rules", [])
+            covering = [r for r in all_rules if r.get("full_cover", True)]
+            partial = [r for r in all_rules if not r.get("full_cover", True)]
+
+        covering_html = "".join(
+            f"<div class='rule-card'>"
+            f"<span class='tag tag-covering'>Covering</span>"
+            f"{_rule_detail_table(r)}"
+            f"</div>"
+            for r in covering
+        ) or ""
+
+        partial_html = ""
+        if partial:
+            partial_cards = "".join(
+                f"<div class='rule-card'>"
+                f"<span class='tag tag-partial'>Partial match</span>"
+                f"{_rule_detail_table(r)}"
+                f"<div class='note'>This rule overlaps the request but does not fully cover it — "
+                f"it is not sufficient on its own.</div>"
+                f"</div>"
+                for r in partial
+            )
+            partial_html = (
+                f"<div class='partial-section'>"
+                f"<div class='partial-label'>Partial / overlapping matches</div>"
+                f"{partial_cards}</div>"
+            )
+
+        if not covering_html and not partial_html:
+            inner = "<div class='note'>(none)</div>"
+        else:
+            inner = covering_html + partial_html
+
         existing_html += (
             f"<div class='rule-card'><strong>{esc(fw)}</strong> "
             f"<span class='tag'>{esc(info.get('status', ''))}</span>"
-            f"<ul>{rules_html}</ul>"
-            f"<div class='note'>{esc(info.get('note', ''))}</div></div>"
+            f"<div class='note'>{esc(info.get('note', ''))}</div>"
+            f"{inner}</div>"
         )
     if not existing_html:
         existing_html = "<div class='note'>No firewalls were checked.</div>"
@@ -277,6 +349,18 @@ def render_html(data: dict) -> str:
   .rule-card .tag {{ display: inline-block; font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
     padding: 1px 6px; margin-left: 8px; }}
+  .rule-detail {{ width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }}
+  .rule-detail td, .rule-detail th {{ padding: 5px 8px; border-bottom: 1px solid var(--border);
+    vertical-align: top; }}
+  .rule-detail th {{ color: var(--muted); font-weight: 600; width: 140px; white-space: nowrap; }}
+  .rule-detail code {{ font-size: 12px; }}
+  .partial-section {{ margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }}
+  .partial-label {{ color: var(--unknown); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }}
+  .tag-partial {{ color: var(--unknown); border-color: rgba(234,179,8,0.35);
+    background: var(--unknown-bg); }}
+  .tag-covering {{ color: var(--allowed); border-color: rgba(34,197,94,0.35);
+    background: var(--allowed-bg); }}
   .note {{ color: var(--muted); font-size: 13px; margin-top: 8px; }}
   .recommendation {{ border-left: 3px solid var(--accent); background: var(--code-bg);
     padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 14.5px; white-space: pre-wrap; }}

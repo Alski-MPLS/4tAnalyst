@@ -766,6 +766,8 @@ def to_report_payload(plan: ChangePlan) -> dict:
         existing_rules[fw.firewall] = {
             "status": fw.status.upper().replace("_", " "),
             "rules": fw.covering_rules + fw.partial_matches,
+            "covering_rules": fw.covering_rules,
+            "partial_matches": fw.partial_matches,
             "note": note,
         }
 

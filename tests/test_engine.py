@@ -400,6 +400,30 @@ def test_already_covered_end_to_end():
     assert plan.risk_level == "medium"
 
 
+def test_to_report_payload_splits_covering_and_partial():
+    """to_report_payload must emit separate covering_rules and partial_matches keys."""
+    plan = _run()
+    payload = to_report_payload(plan)
+    validate_payload(payload)
+
+    fw_name = list(payload["existing_rules"].keys())[0]
+    info = payload["existing_rules"][fw_name]
+
+    # Both new keys must be present
+    assert "covering_rules" in info, "covering_rules key missing from payload"
+    assert "partial_matches" in info, "partial_matches key missing from payload"
+
+    # Legacy rules key must still be present (backward compat)
+    assert "rules" in info
+
+    # covering_rules should be non-empty when status is already_covered
+    if info["status"] == "ALREADY COVERED":
+        assert len(info["covering_rules"]) > 0
+
+    # covering_rules + partial_matches must equal rules (same content, split)
+    assert len(info["covering_rules"]) + len(info["partial_matches"]) == len(info["rules"])
+
+
 def test_new_rule_generates_objects_and_policy():
     plan = _run(service="tcp/8443")
     assert plan.cli_status == "new_rule"

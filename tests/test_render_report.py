@@ -248,6 +248,110 @@ def test_main_rejects_unparseable_json(tmp_path, capsys):
     assert "error" in captured.err
 
 
+def test_render_html_existing_rules_show_rule_detail_table():
+    """Each rule in Existing Rules must show src/dst/service objects, not just ID."""
+    payload = _minimal_payload(
+        existing_rules={
+            "MNHQGOFWENTM01": {
+                "status": "ALREADY COVERED",
+                "rules": [
+                    {
+                        "policy_id": 42,
+                        "name": "SSH and HTTPS",
+                        "package": "OT-pkg",
+                        "status": "enable",
+                        "source": ["H_10.152.12.12", "H_10.152.14.164"],
+                        "destination": ["NET_10.255.0.0_16"],
+                        "service": ["TCP_22", "HTTPS"],
+                        "full_cover": True,
+                    }
+                ],
+                "covering_rules": [
+                    {
+                        "policy_id": 42,
+                        "name": "SSH and HTTPS",
+                        "package": "OT-pkg",
+                        "status": "enable",
+                        "source": ["H_10.152.12.12", "H_10.152.14.164"],
+                        "destination": ["NET_10.255.0.0_16"],
+                        "service": ["TCP_22", "HTTPS"],
+                        "full_cover": True,
+                    }
+                ],
+                "partial_matches": [],
+                "note": "Existing enabled rule(s) fully cover this flow.",
+            }
+        },
+        cli={"status": "already_covered", "per_firewall": []},
+    )
+    html_out = render_report.render_html(payload)
+
+    # Must show policy ID and name
+    assert "#42" in html_out
+    assert "SSH and HTTPS" in html_out
+
+    # Must show source objects
+    assert "H_10.152.12.12" in html_out
+    assert "H_10.152.14.164" in html_out
+
+    # Must show destination objects
+    assert "NET_10.255.0.0_16" in html_out
+
+    # Must show service objects
+    assert "TCP_22" in html_out
+    assert "HTTPS" in html_out
+
+    # Must show package
+    assert "OT-pkg" in html_out
+
+
+def test_render_html_partial_matches_shown_separately():
+    """Partial matches must be visually separated from covering rules."""
+    payload = _minimal_payload(
+        existing_rules={
+            "MNHQGOFWENTM01": {
+                "status": "NEW RULE",
+                "rules": [
+                    {
+                        "policy_id": 77,
+                        "name": "ICMP testing",
+                        "package": "OT-pkg",
+                        "status": "enable",
+                        "source": ["all"],
+                        "destination": ["all"],
+                        "service": ["ICMP"],
+                        "full_cover": False,
+                    }
+                ],
+                "covering_rules": [],
+                "partial_matches": [
+                    {
+                        "policy_id": 77,
+                        "name": "ICMP testing",
+                        "package": "OT-pkg",
+                        "status": "enable",
+                        "source": ["all"],
+                        "destination": ["all"],
+                        "service": ["ICMP"],
+                        "full_cover": False,
+                    }
+                ],
+                "note": "No covering rule found — a new rule is required.",
+            }
+        },
+        cli={"status": "blocked_exception", "per_firewall": []},
+    )
+    html_out = render_report.render_html(payload)
+
+    # ICMP must appear somewhere
+    assert "ICMP" in html_out
+    assert "ICMP testing" in html_out
+
+    # There must be a visual separator / label for partial matches
+    assert "Partial / overlapping matches" in html_out
+    assert "ICMP testing" in html_out  # the specific partial rule must appear
+
+
 def test_render_conf_includes_group_append_alternative():
     payload = _minimal_payload(cli={
         "status": "new_rule",
@@ -279,3 +383,68 @@ def test_render_conf_includes_group_append_alternative():
     html_out = render_report.render_html(payload)
     assert "Alternative: Extend Existing Group" in html_out
     assert "GRP_PUB" in html_out
+
+
+def test_render_html_existing_rules_backward_compat_old_payload():
+    """Payloads with only 'rules' (no covering_rules/partial_matches) must still render.
+
+    full_cover: True rules must get the 'tag-covering' badge; full_cover: False
+    rules must get the 'tag-partial' badge and appear in the partial section, not
+    the covering section.
+    """
+    payload = _minimal_payload(
+        existing_rules={
+            "OLD-FW01": {
+                "status": "ALREADY COVERED",
+                "rules": [
+                    {
+                        "policy_id": 5,
+                        "name": "legacy-allow",
+                        "package": "old-pkg",
+                        "status": "enable",
+                        "source": ["NET_OLD"],
+                        "destination": ["NET_OLD_DST"],
+                        "service": ["HTTPS"],
+                        "full_cover": True,
+                    },
+                    {
+                        "policy_id": 6,
+                        "name": "legacy-partial",
+                        "package": "old-pkg",
+                        "status": "enable",
+                        "source": ["NET_OLD"],
+                        "destination": ["NET_OLD_DST"],
+                        "service": ["HTTP"],
+                        "full_cover": False,
+                    },
+                ],
+                # NOTE: no covering_rules or partial_matches keys
+                "note": "Existing rule covers this.",
+            }
+        },
+        cli={"status": "already_covered", "per_firewall": []},
+    )
+    html_out = render_report.render_html(payload)
+
+    # Must still render the rule details from the legacy "rules" list
+    assert "#5" in html_out
+    assert "legacy-allow" in html_out
+    assert "NET_OLD" in html_out
+    # Explicit destination assertion (not just satisfied by NET_OLD being a substring)
+    assert "NET_OLD_DST" in html_out
+    assert "HTTPS" in html_out
+
+    # full_cover: True rule must appear with the covering badge
+    # full_cover: False rule must appear with the partial badge in the partial section
+    assert "tag-covering" in html_out
+    assert "tag-partial" in html_out
+    assert "Partial / overlapping matches" in html_out
+    assert "legacy-partial" in html_out
+
+    # Verify the covering rule appears before the partial section in the rendered output.
+    # Use the label text (not the CSS class name, which also appears in the <style> block).
+    covering_pos = html_out.find("legacy-allow")
+    partial_label_pos = html_out.find("Partial / overlapping matches")
+    assert covering_pos < partial_label_pos, (
+        "covering rule 'legacy-allow' should appear before the 'Partial / overlapping matches' label"
+    )

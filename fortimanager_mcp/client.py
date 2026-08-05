@@ -198,7 +198,7 @@ class FortiManagerClient:
         """Fetch all items for a list endpoint using range-based pagination."""
         results = []
         offset = 0
-        limit = 500
+        limit = 2000
         extra = extra_params or {}
 
         while True:

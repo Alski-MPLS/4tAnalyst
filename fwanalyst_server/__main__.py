@@ -91,15 +91,25 @@ def _start_catalog_warmup(creds: dict) -> None:
         return
 
     def _warm_once(client, adoms: list[str], label: str) -> None:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from fortimanager_mcp.query import build_catalogs, build_policy_snapshot
-        logger.info("Cache warm-up (%s): refreshing %d ADOM(s)", label, len(adoms))
-        for adom in adoms:
-            try:
-                build_catalogs(client, adom)
-                build_policy_snapshot(client, adom)
-                logger.info("Cache warm-up (%s): %s done", label, adom)
-            except Exception as exc:
-                logger.warning("Cache warm-up (%s): %s failed — %s", label, adom, exc)
+
+        logger.info("Cache warm-up (%s): refreshing %d ADOM(s) in parallel", label, len(adoms))
+
+        def _warm_adom(adom: str) -> str:
+            build_catalogs(client, adom)
+            build_policy_snapshot(client, adom)
+            return adom
+
+        with ThreadPoolExecutor(max_workers=6, thread_name_prefix="warmup") as pool:
+            futures = {pool.submit(_warm_adom, adom): adom for adom in adoms}
+            for future in as_completed(futures):
+                adom = futures[future]
+                try:
+                    future.result()
+                    logger.info("Cache warm-up (%s): %s done", label, adom)
+                except Exception as exc:
+                    logger.warning("Cache warm-up (%s): %s failed — %s", label, adom, exc)
 
     def _loop() -> None:
         try:

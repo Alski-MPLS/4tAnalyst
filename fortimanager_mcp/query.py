@@ -182,9 +182,68 @@ _policy_lock = threading.Lock()
 _policy_inflight: dict[str, threading.Event] = {}
 _POLICY_TTL = 3600  # seconds (1 hour)
 
+# Global address objects are the same regardless of ADOM — cache them once
+# per FortiManager host to avoid re-fetching on every per-ADOM catalog build.
+_global_addr_cache: dict[str, tuple[float, list[dict], list[dict]]] = {}
+_global_addr_lock = threading.Lock()
+_global_addr_inflight: dict[str, threading.Event] = {}
+_GLOBAL_ADDR_TTL = 3600  # seconds (1 hour)
+
 
 def _cache_key(client: FortiManagerClient, adom: str) -> str:
     return f"{getattr(client, '_active_host', id(client))}:{adom}"
+
+
+def _host_key(client: FortiManagerClient) -> str:
+    return str(getattr(client, "_active_host", id(client)))
+
+
+def _get_global_addresses(
+    client: FortiManagerClient,
+) -> tuple[list[dict], list[dict]]:
+    """Fetch global address objects and groups, cached per FMG host.
+
+    Global objects are ADOM-independent — fetching them once per host and
+    reusing the result for all per-ADOM catalog builds avoids downloading the
+    same large list 25 times during the startup warm-up.
+    """
+    key = _host_key(client)
+
+    while True:
+        now = time.monotonic()
+        with _global_addr_lock:
+            entry = _global_addr_cache.get(key)
+            if entry and (now - entry[0]) < _GLOBAL_ADDR_TTL:
+                logger.debug("Global addr cache HIT for %s", key)
+                return entry[1], entry[2]
+            if key in _global_addr_inflight:
+                event = _global_addr_inflight[key]
+            else:
+                event = threading.Event()
+                _global_addr_inflight[key] = event
+                break
+
+        logger.debug("Global addr cache: waiting for in-flight fetch of %s", key)
+        event.wait()
+
+    logger.info("Global addr cache MISS for %s — fetching from FortiManager", key)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_obj = pool.submit(client.get_global_address_objects)
+            f_grp = pool.submit(client.get_global_address_groups)
+            global_objs = f_obj.result()
+            global_grps = f_grp.result()
+
+        with _global_addr_lock:
+            _global_addr_cache[key] = (time.monotonic(), global_objs, global_grps)
+            _global_addr_inflight.pop(key, None)
+        event.set()
+        return global_objs, global_grps
+    except Exception:
+        with _global_addr_lock:
+            _global_addr_inflight.pop(key, None)
+        event.set()
+        raise
 
 
 def build_catalogs(
@@ -219,25 +278,27 @@ def build_catalogs(
 
     logger.info("Catalog cache MISS for %s — fetching from FortiManager", key)
     try:
+        # Global objects are host-wide — fetched once and shared across all ADOMs.
+        # Per-ADOM addr/svc objects and global objects are fetched concurrently.
         fetches = {
-            "addr":        lambda: client.get_address_objects(adom),
-            "addr_grp":    lambda: client.get_address_groups(adom),
-            "global_addr": lambda: client.get_global_address_objects(),
-            "global_grp":  lambda: client.get_global_address_groups(),
-            "svc":         lambda: client.get_service_objects(adom),
-            "svc_grp":     lambda: client.get_service_groups(adom),
+            "addr":    lambda: client.get_address_objects(adom),
+            "addr_grp": lambda: client.get_address_groups(adom),
+            "svc":     lambda: client.get_service_objects(adom),
+            "svc_grp": lambda: client.get_service_groups(adom),
         }
         results: dict[str, list] = {}
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            f_global = pool.submit(_get_global_addresses, client)
             futures = {pool.submit(fn): k for k, fn in fetches.items()}
+            global_objs, global_grps = f_global.result()
             for future in as_completed(futures):
                 results[futures[future]] = future.result()
 
         addr_catalog = AddressCatalog(
             results["addr"],
             results["addr_grp"],
-            results["global_addr"],
-            results["global_grp"],
+            global_objs,
+            global_grps,
         )
         svc_catalog = ServiceCatalog(
             results["svc"],

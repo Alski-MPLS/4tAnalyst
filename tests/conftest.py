@@ -20,8 +20,12 @@ def clear_catalog_cache():
     _fmq._policy_cache.clear()
     _fmq._catalog_inflight.clear()
     _fmq._policy_inflight.clear()
+    _fmq._global_addr_cache.clear()
+    _fmq._global_addr_inflight.clear()
     yield
     _fmq._catalog_cache.clear()
     _fmq._policy_cache.clear()
     _fmq._catalog_inflight.clear()
     _fmq._policy_inflight.clear()
+    _fmq._global_addr_cache.clear()
+    _fmq._global_addr_inflight.clear()

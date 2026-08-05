@@ -165,11 +165,20 @@ def search_devices(
 # Catalog cache — avoids re-fetching thousands of address/service objects on
 # every plan_change call. TTL defaults to 10 minutes; stale entries are
 # refreshed on next access. Cache is per (host, adom) key.
+#
+# Policy cache — same TTL, caches (packages list, policies-by-package dict)
+# per (host, adom) key. Eliminates the dominant cold-start cost of plan_change:
+# iterating all policy packages for two firewalls in ENTERPRISE-SERVICES was
+# the 2–3 minute fetch that caused the SSE stream to drop before results arrived.
 # ---------------------------------------------------------------------------
 
 _catalog_cache: dict[str, tuple[float, AddressCatalog, ServiceCatalog]] = {}
 _catalog_lock = threading.Lock()
 _CATALOG_TTL = 600  # seconds
+
+_policy_cache: dict[str, tuple[float, list[dict], dict[str, list[dict] | None]]] = {}
+_policy_lock = threading.Lock()
+_POLICY_TTL = 300  # seconds — shorter than catalog; policies change more often
 
 
 def _cache_key(client: FortiManagerClient, adom: str) -> str:
@@ -221,6 +230,52 @@ def build_catalogs(
         _catalog_cache[key] = (time.monotonic(), addr_catalog, svc_catalog)
 
     return addr_catalog, svc_catalog
+
+
+def build_policy_snapshot(
+    client: FortiManagerClient, adom: str
+) -> tuple[list[dict], dict[str, list[dict] | None]]:
+    """Fetch and cache all policy packages and their policies for an ADOM.
+
+    Returns (packages, policies_by_package). A None value for a package means
+    the fetch failed (callers must treat that as degraded, not empty). Results
+    are cached for _POLICY_TTL seconds (300s default) — shorter than the
+    catalog TTL because policies change more often than address/service objects.
+
+    This eliminates the dominant cold-start cost of plan_change: without
+    caching, fetching every policy package for both firewalls in a large ADOM
+    takes 2–3 minutes on the first call after a service restart.
+    """
+    key = _cache_key(client, adom)
+    now = time.monotonic()
+
+    with _policy_lock:
+        entry = _policy_cache.get(key)
+        if entry and (now - entry[0]) < _POLICY_TTL:
+            return entry[1], entry[2]
+
+    packages = client.get_policy_packages(adom)
+
+    def _fetch_pkg(pkg: dict) -> tuple[str, list[dict] | None]:
+        pkg_name = pkg.get("name", "")
+        try:
+            return pkg_name, [p for p in client.get_policies(adom, pkg_name) if isinstance(p, dict)]
+        except FortiManagerAPIError as exc:
+            logger.warning("Policy cache: failed to fetch %s/%s: %s", adom, pkg_name, exc)
+            return pkg_name, None  # None = fetch failed; [] = successfully empty
+
+    policies_by_package: dict[str, list[dict] | None] = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(_fetch_pkg, pkg): pkg for pkg in packages}
+        for future in as_completed(futures):
+            pkg_name, policies = future.result()
+            if pkg_name:
+                policies_by_package[pkg_name] = policies
+
+    with _policy_lock:
+        _policy_cache[key] = (time.monotonic(), packages, policies_by_package)
+
+    return packages, policies_by_package
 
 
 def search_policies(

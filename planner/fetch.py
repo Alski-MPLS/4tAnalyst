@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from fortimanager_mcp.client import FortiManagerClient, FortiManagerAPIError
 from fortimanager_mcp.matching import AddressCatalog, ServiceCatalog
-from fortimanager_mcp.query import _package_targets_device, build_catalogs
+from fortimanager_mcp.query import _package_targets_device, build_catalogs, build_policy_snapshot
 from fortimanager_mcp.zone_map import load_zone_map, lookup_policy_zone
 from zone_mcp.client import ZonePolicyClient, ZonePolicyError
 
@@ -57,7 +57,7 @@ def fetch_device_snapshot(
         )
 
     try:
-        packages = client.get_policy_packages(adom)
+        packages, all_policies_by_package = build_policy_snapshot(client, adom)
         addr_catalog, svc_catalog = build_catalogs(client, adom)
     except FortiManagerAPIError as exc:
         raise PlannerDataError("fortimanager", f"cannot fetch object catalogs: {exc}") from exc
@@ -70,12 +70,11 @@ def fetch_device_snapshot(
     policies_by_package: dict[str, list[dict]] = {}
     failures: list[str] = []
     for pkg in device_pkgs:
-        try:
-            policies_by_package[pkg] = [
-                p for p in client.get_policies(adom, pkg) if isinstance(p, dict)
-            ]
-        except FortiManagerAPIError as exc:
-            failures.append(f"package {pkg!r}: {exc}")
+        cached = all_policies_by_package.get(pkg)
+        if cached is None:
+            failures.append(f"package {pkg!r}: fetch failed")
+        else:
+            policies_by_package[pkg] = cached
 
     interfaces: list[dict] = []
     zone_map_warnings: list[str] = []

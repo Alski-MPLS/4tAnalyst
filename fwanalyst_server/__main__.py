@@ -89,7 +89,7 @@ def _start_catalog_warmup(creds: dict) -> None:
     def _warm() -> None:
         try:
             from fortimanager_mcp.client import FortiManagerClient
-            from fortimanager_mcp.query import build_catalogs, list_adoms
+            from fortimanager_mcp.query import build_catalogs, build_policy_snapshot, list_adoms
 
             primary = hosts[0]
             secondary = hosts[1] if len(hosts) > 1 else {}
@@ -104,11 +104,12 @@ def _start_catalog_warmup(creds: dict) -> None:
             )
             client.login()
             adoms = [a["name"] for a in list_adoms(client) if a.get("name")]
-            logger.info("Cache warm-up: pre-fetching catalogs for %d ADOM(s): %s",
+            logger.info("Cache warm-up: pre-fetching catalogs and policies for %d ADOM(s): %s",
                         len(adoms), adoms)
             for adom in adoms:
                 try:
                     build_catalogs(client, adom)
+                    build_policy_snapshot(client, adom)
                     logger.info("Cache warm-up: %s done", adom)
                 except Exception as exc:
                     logger.warning("Cache warm-up: %s failed — %s", adom, exc)

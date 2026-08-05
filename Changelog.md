@@ -8,16 +8,23 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
-#### Startup catalog warm-up to prevent cold-cache MCP transport drops (`fwanalyst_server/__main__.py`)
+#### Policy package cache + startup warm-up to prevent cold-cache MCP transport drops (`fortimanager_mcp/query.py`, `planner/fetch.py`, `fwanalyst_server/__main__.py`)
 
-`plan_change` on a cold cache fetches thousands of address and service objects from FortiManager across all ADOMs before evaluating anything — typically 2–3 minutes on a large ADOM. The MCP SSE stream has no data to write during that window; the client-side SSE reader (or a network TCP-idle timer) drops the connection with `ClosedResourceError` in `standalone_sse_writer`, surfacing as "MCP transport dropped" on the Claude Code workstation.
+`plan_change` on a cold cache fetches thousands of address/service objects **and** iterates every policy package in the ADOM before evaluating anything — typically 2–3 minutes total on a large ADOM. The MCP SSE stream has no data to write during that window; the client-side SSE reader (or a network TCP-idle timer) drops the connection with `ClosedResourceError` in `standalone_sse_writer`, surfacing as "MCP transport dropped" on the Claude Code workstation.
 
-The fix: when starting in HTTP mode, a background daemon thread (`catalog-warmup`) is launched immediately after the ASGI app is constructed. It logs into FortiManager using `credentials.yaml`, enumerates all ADOMs, and calls `build_catalogs()` for each one — populating `_catalog_cache` so the first real `plan_change` call hits already-warm catalogs and completes in seconds rather than minutes.
+**`fortimanager_mcp/query.py` — `build_policy_snapshot()`** (new function)
+- Fetches and caches all policy packages and their policies for an ADOM using a 6-parallel `ThreadPoolExecutor` (one fetch per package).
+- Cache TTL: 300 seconds (5 minutes) — shorter than the address/service catalog TTL because policies change more often than address objects.
+- A `None` value for a package in the returned dict means the fetch failed (so callers degrade correctly); `[]` means the package was successfully fetched but is empty. Never conflates the two.
 
-- Warm-up runs in a daemon thread so it never blocks server startup or uvicorn.
+**`planner/fetch.py` — `fetch_device_snapshot()`**
+- Now calls `build_policy_snapshot()` instead of fetching packages and policies inline. Per-package `None` entries (failed fetches) are propagated as `failures` so the snapshot is marked `degraded`.
+
+**`fwanalyst_server/__main__.py` — `_start_catalog_warmup()`**
+- Extended to also call `build_policy_snapshot()` for each ADOM alongside `build_catalogs()`. After a service restart, both the address/service catalog cache and the policy cache are populated before any engineer request arrives — so the first `plan_change` call hits warm caches and completes in seconds.
+- Warm-up runs in a daemon thread so it never blocks server startup.
 - Per-ADOM failures are logged as warnings and do not abort other ADOMs or the server.
-- Warm-up is skipped entirely in `stdio` mode (development) and when no `fortimanager.hosts` are configured in `credentials.yaml`.
-- Cache TTL remains 10 minutes; after expiry the next caller re-fetches as before.
+- Skipped in `stdio` mode and when no `fortimanager.hosts` are configured.
 
 ---
 

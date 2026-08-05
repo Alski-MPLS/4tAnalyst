@@ -174,15 +174,76 @@ def search_devices(
 
 _catalog_cache: dict[str, tuple[float, AddressCatalog, ServiceCatalog]] = {}
 _catalog_lock = threading.Lock()
-_CATALOG_TTL = 600  # seconds
+_catalog_inflight: dict[str, threading.Event] = {}
+_CATALOG_TTL = 3600  # seconds (1 hour)
 
 _policy_cache: dict[str, tuple[float, list[dict], dict[str, list[dict] | None]]] = {}
 _policy_lock = threading.Lock()
-_POLICY_TTL = 300  # seconds — shorter than catalog; policies change more often
+_policy_inflight: dict[str, threading.Event] = {}
+_POLICY_TTL = 3600  # seconds (1 hour)
+
+# Global address objects are the same regardless of ADOM — cache them once
+# per FortiManager host to avoid re-fetching on every per-ADOM catalog build.
+_global_addr_cache: dict[str, tuple[float, list[dict], list[dict]]] = {}
+_global_addr_lock = threading.Lock()
+_global_addr_inflight: dict[str, threading.Event] = {}
+_GLOBAL_ADDR_TTL = 3600  # seconds (1 hour)
 
 
 def _cache_key(client: FortiManagerClient, adom: str) -> str:
     return f"{getattr(client, '_active_host', id(client))}:{adom}"
+
+
+def _host_key(client: FortiManagerClient) -> str:
+    return str(getattr(client, "_active_host", id(client)))
+
+
+def _get_global_addresses(
+    client: FortiManagerClient,
+) -> tuple[list[dict], list[dict]]:
+    """Fetch global address objects and groups, cached per FMG host.
+
+    Global objects are ADOM-independent — fetching them once per host and
+    reusing the result for all per-ADOM catalog builds avoids downloading the
+    same large list 25 times during the startup warm-up.
+    """
+    key = _host_key(client)
+
+    while True:
+        now = time.monotonic()
+        with _global_addr_lock:
+            entry = _global_addr_cache.get(key)
+            if entry and (now - entry[0]) < _GLOBAL_ADDR_TTL:
+                logger.debug("Global addr cache HIT for %s", key)
+                return entry[1], entry[2]
+            if key in _global_addr_inflight:
+                event = _global_addr_inflight[key]
+            else:
+                event = threading.Event()
+                _global_addr_inflight[key] = event
+                break
+
+        logger.debug("Global addr cache: waiting for in-flight fetch of %s", key)
+        event.wait()
+
+    logger.info("Global addr cache MISS for %s — fetching from FortiManager", key)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_obj = pool.submit(client.get_global_address_objects)
+            f_grp = pool.submit(client.get_global_address_groups)
+            global_objs = f_obj.result()
+            global_grps = f_grp.result()
+
+        with _global_addr_lock:
+            _global_addr_cache[key] = (time.monotonic(), global_objs, global_grps)
+            _global_addr_inflight.pop(key, None)
+        event.set()
+        return global_objs, global_grps
+    except Exception:
+        with _global_addr_lock:
+            _global_addr_inflight.pop(key, None)
+        event.set()
+        raise
 
 
 def build_catalogs(
@@ -190,46 +251,70 @@ def build_catalogs(
 ) -> tuple[AddressCatalog, ServiceCatalog]:
     """Fetch and index all address/service objects for an ADOM (incl. global).
 
-    Results are cached for _CATALOG_TTL seconds to avoid re-fetching thousands
-    of objects on every plan_change call.
+    Results are cached for _CATALOG_TTL seconds. Concurrent callers for the
+    same key block until the first fetch completes rather than each issuing
+    their own redundant FortiManager calls.
     """
     key = _cache_key(client, adom)
-    now = time.monotonic()
 
-    with _catalog_lock:
-        entry = _catalog_cache.get(key)
-        if entry and (now - entry[0]) < _CATALOG_TTL:
-            return entry[1], entry[2]
+    while True:
+        now = time.monotonic()
+        with _catalog_lock:
+            entry = _catalog_cache.get(key)
+            if entry and (now - entry[0]) < _CATALOG_TTL:
+                logger.debug("Catalog cache HIT for %s (age %.0fs)", key, now - entry[0])
+                return entry[1], entry[2]
+            # Another thread is already fetching — wait for it
+            if key in _catalog_inflight:
+                event = _catalog_inflight[key]
+            else:
+                event = threading.Event()
+                _catalog_inflight[key] = event
+                break  # this thread owns the fetch
 
-    fetches = {
-        "addr":        lambda: client.get_address_objects(adom),
-        "addr_grp":    lambda: client.get_address_groups(adom),
-        "global_addr": lambda: client.get_global_address_objects(),
-        "global_grp":  lambda: client.get_global_address_groups(),
-        "svc":         lambda: client.get_service_objects(adom),
-        "svc_grp":     lambda: client.get_service_groups(adom),
-    }
-    results: dict[str, list] = {}
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {pool.submit(fn): key for key, fn in fetches.items()}
-        for future in as_completed(futures):
-            results[futures[future]] = future.result()
+        logger.debug("Catalog cache: waiting for in-flight fetch of %s", key)
+        event.wait()
+        # After the fetching thread signals, loop back and read from cache
 
-    addr_catalog = AddressCatalog(
-        results["addr"],
-        results["addr_grp"],
-        results["global_addr"],
-        results["global_grp"],
-    )
-    svc_catalog = ServiceCatalog(
-        results["svc"],
-        results["svc_grp"],
-    )
+    logger.info("Catalog cache MISS for %s — fetching from FortiManager", key)
+    try:
+        # Global objects are host-wide — fetched once and shared across all ADOMs.
+        # Per-ADOM addr/svc objects and global objects are fetched concurrently.
+        fetches = {
+            "addr":    lambda: client.get_address_objects(adom),
+            "addr_grp": lambda: client.get_address_groups(adom),
+            "svc":     lambda: client.get_service_objects(adom),
+            "svc_grp": lambda: client.get_service_groups(adom),
+        }
+        results: dict[str, list] = {}
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            f_global = pool.submit(_get_global_addresses, client)
+            futures = {pool.submit(fn): k for k, fn in fetches.items()}
+            global_objs, global_grps = f_global.result()
+            for future in as_completed(futures):
+                results[futures[future]] = future.result()
 
-    with _catalog_lock:
-        _catalog_cache[key] = (time.monotonic(), addr_catalog, svc_catalog)
+        addr_catalog = AddressCatalog(
+            results["addr"],
+            results["addr_grp"],
+            global_objs,
+            global_grps,
+        )
+        svc_catalog = ServiceCatalog(
+            results["svc"],
+            results["svc_grp"],
+        )
 
-    return addr_catalog, svc_catalog
+        with _catalog_lock:
+            _catalog_cache[key] = (time.monotonic(), addr_catalog, svc_catalog)
+            _catalog_inflight.pop(key, None)
+        event.set()
+        return addr_catalog, svc_catalog
+    except Exception:
+        with _catalog_lock:
+            _catalog_inflight.pop(key, None)
+        event.set()
+        raise
 
 
 def build_policy_snapshot(
@@ -239,12 +324,71 @@ def build_policy_snapshot(
 
     Returns (packages, policies_by_package). A None value for a package means
     the fetch failed (callers must treat that as degraded, not empty). Results
-    are cached for _POLICY_TTL seconds (300s default) — shorter than the
-    catalog TTL because policies change more often than address/service objects.
+    are cached for _POLICY_TTL seconds (1 hour). Concurrent callers for the
+    same key block until the first fetch completes — no redundant parallel
+    FortiManager fetches.
+    """
+    key = _cache_key(client, adom)
 
-    This eliminates the dominant cold-start cost of plan_change: without
-    caching, fetching every policy package for both firewalls in a large ADOM
-    takes 2–3 minutes on the first call after a service restart.
+    while True:
+        now = time.monotonic()
+        with _policy_lock:
+            entry = _policy_cache.get(key)
+            if entry and (now - entry[0]) < _POLICY_TTL:
+                logger.debug("Policy cache HIT for %s (age %.0fs)", key, now - entry[0])
+                return entry[1], entry[2]
+            if key in _policy_inflight:
+                event = _policy_inflight[key]
+            else:
+                event = threading.Event()
+                _policy_inflight[key] = event
+                break
+
+        logger.debug("Policy cache: waiting for in-flight fetch of %s", key)
+        event.wait()
+
+    logger.info("Policy cache MISS for %s — fetching from FortiManager", key)
+    try:
+        packages = client.get_policy_packages(adom)
+
+        def _fetch_pkg(pkg: dict) -> tuple[str, list[dict] | None]:
+            pkg_name = pkg.get("name", "")
+            try:
+                return pkg_name, [p for p in client.get_policies(adom, pkg_name) if isinstance(p, dict)]
+            except FortiManagerAPIError as exc:
+                logger.warning("Policy cache: failed to fetch %s/%s: %s", adom, pkg_name, exc)
+                return pkg_name, None  # None = fetch failed; [] = successfully empty
+
+        policies_by_package: dict[str, list[dict] | None] = {}
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {pool.submit(_fetch_pkg, pkg): pkg for pkg in packages}
+            for future in as_completed(futures):
+                pkg_name, policies = future.result()
+                if pkg_name:
+                    policies_by_package[pkg_name] = policies
+
+        with _policy_lock:
+            _policy_cache[key] = (time.monotonic(), packages, policies_by_package)
+            _policy_inflight.pop(key, None)
+        event.set()
+        return packages, policies_by_package
+    except Exception:
+        with _policy_lock:
+            _policy_inflight.pop(key, None)
+        event.set()
+        raise
+
+
+def get_device_policies(
+    client: FortiManagerClient, adom: str, device_pkgs: list[str]
+) -> dict[str, list[dict] | None]:
+    """Return policies for only the specified package names.
+
+    Uses the full ADOM policy cache if warm. On a cold cache, fetches only
+    the requested packages in parallel — dramatically faster than a full-ADOM
+    scan when only 2-3 packages are needed for a specific device.
+
+    A None value for a package means the fetch failed (caller should degrade).
     """
     key = _cache_key(client, adom)
     now = time.monotonic()
@@ -252,30 +396,30 @@ def build_policy_snapshot(
     with _policy_lock:
         entry = _policy_cache.get(key)
         if entry and (now - entry[0]) < _POLICY_TTL:
-            return entry[1], entry[2]
+            logger.debug("Policy cache HIT (device path) for %s", key)
+            all_policies = entry[2]
+            return {pkg: all_policies.get(pkg) for pkg in device_pkgs}
 
-    packages = client.get_policy_packages(adom)
+    logger.info(
+        "Policy cache MISS (device path) for %s — fetching %d package(s) directly: %s",
+        key, len(device_pkgs), device_pkgs,
+    )
 
-    def _fetch_pkg(pkg: dict) -> tuple[str, list[dict] | None]:
-        pkg_name = pkg.get("name", "")
+    def _fetch(pkg_name: str) -> tuple[str, list[dict] | None]:
         try:
-            return pkg_name, [p for p in client.get_policies(adom, pkg_name) if isinstance(p, dict)]
+            return pkg_name, [
+                p for p in client.get_policies(adom, pkg_name) if isinstance(p, dict)
+            ]
         except FortiManagerAPIError as exc:
-            logger.warning("Policy cache: failed to fetch %s/%s: %s", adom, pkg_name, exc)
-            return pkg_name, None  # None = fetch failed; [] = successfully empty
+            logger.warning("get_device_policies: failed %s/%s: %s", adom, pkg_name, exc)
+            return pkg_name, None
 
-    policies_by_package: dict[str, list[dict] | None] = {}
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(_fetch_pkg, pkg): pkg for pkg in packages}
-        for future in as_completed(futures):
-            pkg_name, policies = future.result()
-            if pkg_name:
-                policies_by_package[pkg_name] = policies
-
-    with _policy_lock:
-        _policy_cache[key] = (time.monotonic(), packages, policies_by_package)
-
-    return packages, policies_by_package
+    result: dict[str, list[dict] | None] = {}
+    workers = max(1, min(len(device_pkgs), 4))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for pkg_name, policies in pool.map(_fetch, device_pkgs):
+            result[pkg_name] = policies
+    return result
 
 
 def search_policies(

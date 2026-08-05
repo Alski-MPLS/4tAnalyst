@@ -21,10 +21,18 @@ All notable changes to this project are documented here.
 - Now calls `build_policy_snapshot()` instead of fetching packages and policies inline. Per-package `None` entries (failed fetches) are propagated as `failures` so the snapshot is marked `degraded`.
 
 **`fwanalyst_server/__main__.py` — `_start_catalog_warmup()`**
-- Extended to also call `build_policy_snapshot()` for each ADOM alongside `build_catalogs()`. After a service restart, both the address/service catalog cache and the policy cache are populated before any engineer request arrives — so the first `plan_change` call hits warm caches and completes in seconds.
-- Warm-up runs in a daemon thread so it never blocks server startup.
+- Extended to also call `build_policy_snapshot()` for each ADOM alongside `build_catalogs()`. After a service restart, both caches are populated before any engineer request arrives.
+- Runs as a persistent daemon loop: initial warm-up at startup, then refreshes every 45 minutes — well before the 1-hour TTL — so the cache never goes cold between requests.
 - Per-ADOM failures are logged as warnings and do not abort other ADOMs or the server.
 - Skipped in `stdio` mode and when no `fortimanager.hosts` are configured.
+
+**Cache TTL increased** (`fortimanager_mcp/query.py`)
+- `_CATALOG_TTL` and `_POLICY_TTL` both raised from 600s/300s to 3600s (1 hour). The periodic refresh loop makes expiry-driven cold-fetches impossible in normal operation; the 1-hour TTL is now a safety backstop only.
+
+**Cache HIT/MISS logging** (`fortimanager_mcp/query.py`)
+- `build_catalogs()` and `build_policy_snapshot()` now emit `INFO` log lines on cache MISS and `DEBUG` on HIT, making it easy to confirm whether a `plan_change` call was served from cache or triggered a live FortiManager fetch.
+
+**`tests/conftest.py`** — autouse fixture extended to also clear `_policy_cache` (same CPython id-reuse risk as `_catalog_cache`).
 
 ---
 

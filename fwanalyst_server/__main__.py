@@ -71,25 +71,40 @@ def _allowed_hosts() -> list[str]:
     return []
 
 
-def _start_catalog_warmup(creds: dict) -> None:
-    """Pre-populate the FortiManager catalog cache in the background.
+_CACHE_REFRESH_INTERVAL = 2700  # 45 minutes — refresh well before the 1-hour TTL
 
-    plan_change on a cold cache fetches thousands of address/service objects
-    from FortiManager before it can evaluate anything — typically 2–3 minutes
-    on ENTERPRISE-SERVICES-sized ADOMs. The MCP SSE stream has no data to send
-    during that window, and some clients (or network TCP-idle timers) drop the
-    connection before the result arrives. Warming the cache at startup means the
-    first real plan_change call hits populated catalogs and completes in seconds.
+
+def _start_catalog_warmup(creds: dict) -> None:
+    """Pre-populate the FortiManager catalog and policy caches, then keep them warm.
+
+    plan_change on a cold cache fetches thousands of address/service objects AND
+    iterates every policy package — typically 2–3 minutes on a large ADOM. The MCP
+    SSE stream has no data during that window; the client-side reader drops the
+    connection with ClosedResourceError before the result arrives.
+
+    A background daemon thread populates both caches at startup, then re-warms them
+    every 45 minutes (before the 1-hour TTL expires) so they are never cold again.
     """
     fmg_conf = creds.get("fortimanager", {})
     hosts = fmg_conf.get("hosts", [])
     if not hosts:
         return
 
-    def _warm() -> None:
+    def _warm_once(client, adoms: list[str], label: str) -> None:
+        from fortimanager_mcp.query import build_catalogs, build_policy_snapshot
+        logger.info("Cache warm-up (%s): refreshing %d ADOM(s)", label, len(adoms))
+        for adom in adoms:
+            try:
+                build_catalogs(client, adom)
+                build_policy_snapshot(client, adom)
+                logger.info("Cache warm-up (%s): %s done", label, adom)
+            except Exception as exc:
+                logger.warning("Cache warm-up (%s): %s failed — %s", label, adom, exc)
+
+    def _loop() -> None:
         try:
             from fortimanager_mcp.client import FortiManagerClient
-            from fortimanager_mcp.query import build_catalogs, build_policy_snapshot, list_adoms
+            from fortimanager_mcp.query import list_adoms
 
             primary = hosts[0]
             secondary = hosts[1] if len(hosts) > 1 else {}
@@ -104,19 +119,19 @@ def _start_catalog_warmup(creds: dict) -> None:
             )
             client.login()
             adoms = [a["name"] for a in list_adoms(client) if a.get("name")]
-            logger.info("Cache warm-up: pre-fetching catalogs and policies for %d ADOM(s): %s",
-                        len(adoms), adoms)
-            for adom in adoms:
-                try:
-                    build_catalogs(client, adom)
-                    build_policy_snapshot(client, adom)
-                    logger.info("Cache warm-up: %s done", adom)
-                except Exception as exc:
-                    logger.warning("Cache warm-up: %s failed — %s", adom, exc)
+
+            # Initial warm-up at startup
+            _warm_once(client, adoms, "startup")
+
+            # Periodic refresh to keep caches from going cold
+            while True:
+                threading.Event().wait(_CACHE_REFRESH_INTERVAL)
+                _warm_once(client, adoms, "refresh")
+
         except Exception as exc:
             logger.warning("Cache warm-up thread failed: %s", exc)
 
-    t = threading.Thread(target=_warm, name="catalog-warmup", daemon=True)
+    t = threading.Thread(target=_loop, name="catalog-warmup", daemon=True)
     t.start()
 
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from fortimanager_mcp.client import FortiManagerClient, FortiManagerAPIError
 from fortimanager_mcp.matching import AddressCatalog, ServiceCatalog
-from fortimanager_mcp.query import _package_targets_device, build_catalogs, build_policy_snapshot
+from fortimanager_mcp.query import _package_targets_device, build_catalogs, build_policy_snapshot, get_device_policies
 from fortimanager_mcp.zone_map import load_zone_map, lookup_policy_zone
 from zone_mcp.client import ZonePolicyClient, ZonePolicyError
 
@@ -57,7 +57,7 @@ def fetch_device_snapshot(
         )
 
     try:
-        packages, all_policies_by_package = build_policy_snapshot(client, adom)
+        packages = client.get_policy_packages(adom)
         addr_catalog, svc_catalog = build_catalogs(client, adom)
     except FortiManagerAPIError as exc:
         raise PlannerDataError("fortimanager", f"cannot fetch object catalogs: {exc}") from exc
@@ -67,10 +67,15 @@ def fetch_device_snapshot(
         if isinstance(p, dict) and _package_targets_device(p, device)
     ]
 
+    # Fetch only the packages assigned to this device. Uses the full ADOM policy
+    # cache if warm (background warm-up), otherwise fetches just these packages
+    # directly — avoiding a full-ADOM scan on cold start.
+    pkg_results = get_device_policies(client, adom, device_pkgs)
+
     policies_by_package: dict[str, list[dict]] = {}
     failures: list[str] = []
     for pkg in device_pkgs:
-        cached = all_policies_by_package.get(pkg)
+        cached = pkg_results.get(pkg)
         if cached is None:
             failures.append(f"package {pkg!r}: fetch failed")
         else:

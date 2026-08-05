@@ -318,6 +318,49 @@ def build_policy_snapshot(
         raise
 
 
+def get_device_policies(
+    client: FortiManagerClient, adom: str, device_pkgs: list[str]
+) -> dict[str, list[dict] | None]:
+    """Return policies for only the specified package names.
+
+    Uses the full ADOM policy cache if warm. On a cold cache, fetches only
+    the requested packages in parallel — dramatically faster than a full-ADOM
+    scan when only 2-3 packages are needed for a specific device.
+
+    A None value for a package means the fetch failed (caller should degrade).
+    """
+    key = _cache_key(client, adom)
+    now = time.monotonic()
+
+    with _policy_lock:
+        entry = _policy_cache.get(key)
+        if entry and (now - entry[0]) < _POLICY_TTL:
+            logger.debug("Policy cache HIT (device path) for %s", key)
+            all_policies = entry[2]
+            return {pkg: all_policies.get(pkg) for pkg in device_pkgs}
+
+    logger.info(
+        "Policy cache MISS (device path) for %s — fetching %d package(s) directly: %s",
+        key, len(device_pkgs), device_pkgs,
+    )
+
+    def _fetch(pkg_name: str) -> tuple[str, list[dict] | None]:
+        try:
+            return pkg_name, [
+                p for p in client.get_policies(adom, pkg_name) if isinstance(p, dict)
+            ]
+        except FortiManagerAPIError as exc:
+            logger.warning("get_device_policies: failed %s/%s: %s", adom, pkg_name, exc)
+            return pkg_name, None
+
+    result: dict[str, list[dict] | None] = {}
+    workers = max(1, min(len(device_pkgs), 4))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for pkg_name, policies in pool.map(_fetch, device_pkgs):
+            result[pkg_name] = policies
+    return result
+
+
 def search_policies(
     client: FortiManagerClient,
     adom: str,

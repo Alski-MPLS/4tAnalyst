@@ -1,0 +1,13 @@
+<svg width="520" height="140" viewBox="0 0 520 140" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="4tAnalyst logo">
+  <rect width="520" height="140" rx="16" fill="#141a24"/>
+  <g transform="translate(28, 22)">
+    <path d="M48 6 L86 26 V70 L48 90 L10 70 V26 Z" fill="#f4f6f8"/>
+    <path d="M48 6 L86 26 L48 46 L10 26 Z" fill="#e08a2c"/>
+    <circle cx="40" cy="55" r="11" stroke="#141a24" stroke-width="4" fill="none"/>
+    <line x1="48" y1="63" x2="60" y2="75" stroke="#141a24" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="150" y="82" font-family="'Space Grotesk','Segoe UI',Helvetica,Arial,sans-serif" font-size="44" font-weight="700">
+    <tspan fill="#f4f6f8">4t</tspan><tspan fill="#e08a2c">Analyst</tspan>
+  </text>
+  <text x="150" y="108" font-family="'IBM Plex Mono','Courier New',monospace" font-size="13" letter-spacing="1" fill="#9aa7b6">RULE REVIEW · AI ASSIST</text>
+</svg>

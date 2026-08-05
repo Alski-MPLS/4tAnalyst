@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="4tAnalyst logo" width="420">
+</p>
+
 # 4tAnalyst
 
 An AI assistant for firewall change request analysis. Engineers interact with it through [Claude Code](https://claude.ai/code) using slash commands — 4tAnalyst handles policy research, standards validation, and peer review package generation, keeping the engineer as the final decision-maker.

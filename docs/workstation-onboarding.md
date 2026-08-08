@@ -41,31 +41,39 @@ You will put this token into the `.mcp.json` file in the next step.
 
 ## 4. Point Claude Code at the central server
 
-Copy the example config and fill in your hostname and token:
+Copy the example config and fill in your hostname:
 
 ```bash
 cp .mcp.json.example .mcp.json
 ```
 
-Then edit `.mcp.json` and replace the two placeholders:
+Then edit `.mcp.json` and replace the one remaining placeholder:
 
 ```json
 {
   "mcpServers": {
     "4tanalyst": {
       "type": "http",
-      "url": "https://<central-server>/mcp",
-      "headers": { "Authorization": "Bearer <your-token-here>" }
+      "url": "https://<central-server>:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FW_ANALYST_CLIENT_TOKEN}"
+      }
     }
   }
 }
 ```
 
-Replace `<central-server>` with the hostname the admin provides and `<your-token-here>` with the 64-character token from Step 3.
+Replace `<central-server>` with the hostname the admin provides. Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.).
 
-Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.).
+Do **not** paste the token itself into `.mcp.json`. Claude Code expands `${VAR}` references in `.mcp.json` headers at connect time, so set `FW_ANALYST_CLIENT_TOKEN` as an environment variable instead — in your shell profile (`~/.zshrc`, `~/.bashrc`) or, better, your OS keychain if your shell setup supports sourcing secrets from it:
 
-`.mcp.json` is gitignored — your token will never be committed to the repo.
+```bash
+export FW_ANALYST_CLIENT_TOKEN="<the 64-character token from Step 3>"
+```
+
+The token handling rules from Step 3 still apply — do not email it in plaintext, do not commit it anywhere, and contact the admin immediately if you suspect it was exposed.
+
+`.mcp.json` is gitignored — your token will never be committed to the repo. (`.mcp.json` itself carries no secret once you're using `${FW_ANALYST_CLIENT_TOKEN}`, but the gitignore entry stays as defense in depth.)
 
 ## 5. Verify
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hmac
 import json
 
-from fwanalyst_server.context import allowed_adoms_var
+from fwanalyst_server.context import allowed_adoms_var, token_label_var
 
 
 class AuthConfigError(ValueError):
@@ -41,6 +41,20 @@ def _resolve_allowed_adoms(token: str, creds: dict) -> set[str] | None:
             return {"*"} if "*" in adoms else set(adoms)
 
     return None
+
+
+def _resolve_token_label(token: str, creds: dict) -> str:
+    """Return the server.tokens `label` for a named token, or "-" if absent.
+
+    Access-logging only — this grants nothing, so unlike _resolve_allowed_adoms
+    its return value must never be used to make an authorization decision. Only
+    called for tokens already resolved as named ones; the legacy auth_token is
+    still never a lookup target here.
+    """
+    for entry in creds.get("server", {}).get("tokens", []):
+        if hmac.compare_digest(token.encode(), entry.get("token", "").encode()):
+            return str(entry.get("label", "")).strip() or "-"
+    return "-"
 
 
 def require_bearer(app, token: str, creds: dict | None = None):
@@ -91,10 +105,15 @@ def require_bearer(app, token: str, creds: dict | None = None):
 
         # Inject ADOM set (full access if no creds provided or legacy token)
         resolved = adom_set if adom_set is not None else {"*"}
+        # adom_set is not None only for named tokens; the sole remaining way to
+        # reach here is the primary hmac.compare_digest match above.
+        label = _resolve_token_label(supplied_token, _creds) if adom_set is not None else "admin"
         token_ctx = allowed_adoms_var.set(resolved)
+        label_ctx = token_label_var.set(label)
         try:
             await app(scope, receive, send)
         finally:
             allowed_adoms_var.reset(token_ctx)
+            token_label_var.reset(label_ctx)
 
     return wrapped

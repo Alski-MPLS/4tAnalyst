@@ -26,6 +26,7 @@ from typing import Any
 
 import yaml
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from zone_mcp.client import ZonePolicyClient, ZonePolicyError
 
@@ -69,10 +70,17 @@ def _zone_client() -> ZonePolicyClient:
             "Set it to the 4th_... Bearer token."
         )
 
+    verify_ssl = cfg.get("verify_ssl", False)
+    if isinstance(verify_ssl, str):
+        # A CA bundle path — pass through as-is (requests accepts str or bool).
+        pass
+    else:
+        verify_ssl = bool(verify_ssl)
+
     return ZonePolicyClient(
         base_url=base_url,
         token=token,
-        verify_ssl=bool(cfg.get("verify_ssl", False)),
+        verify_ssl=verify_ssl,
         timeout=float(cfg.get("timeout", 30.0)),
     )
 
@@ -101,7 +109,7 @@ mcp = FastMCP(
 # Tool: query_zone_policy
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def query_zone_policy(
     src: str,
     dst: str,
@@ -142,7 +150,7 @@ def query_zone_policy(
 # Tool: get_zones
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_zones() -> dict[str, Any]:
     """
     Return the full zone catalogue from the 4THealth zone policy database.
@@ -166,7 +174,7 @@ def get_zones() -> dict[str, Any]:
 # Tool: get_policies
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_policies() -> list[dict[str, Any]]:
     """
     Return the complete zone-pair policy table from 4THealth.
@@ -191,7 +199,7 @@ def get_policies() -> list[dict[str, Any]]:
 # Tool: find_zone_for_ip
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def find_zone_for_ip(ip: str) -> dict[str, Any]:
     """
     Resolve an IP address or CIDR to the zone(s) it belongs to.
@@ -224,7 +232,7 @@ def find_zone_for_ip(ip: str) -> dict[str, Any]:
 # Tool: check_ip_traffic
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def check_ip_traffic(
     src_ip: str,
     dst_ip: str,

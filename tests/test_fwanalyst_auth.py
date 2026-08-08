@@ -4,6 +4,7 @@ Middleware is driven directly as an ASGI callable — no server needed.
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -221,3 +222,234 @@ def test_require_bearer_named_token_differs_from_primary():
     sent = _call(app, [(b"authorization", b"Bearer eng-tok")])
     assert sent[0]["status"] == 200
     assert captured["adoms"] == {"OT-ADOM"}
+
+
+# ---------------------------------------------------------------------------
+# Access logging — token label ContextVar + tool wrapper
+# ---------------------------------------------------------------------------
+
+_LOGGING_CREDS = {
+    "server": {
+        "adom_restriction": True,
+        "auth_token": "admin-token",
+        "tokens": [
+            {"token": "eng-tok", "label": "alice", "adoms": ["OT-ADOM"]},
+            {"token": "unlabelled-tok", "adoms": ["OT-ADOM"]},
+        ],
+    }
+}
+
+
+def _capture_label(token: str, creds=None, primary="admin-token"):
+    from fwanalyst_server.auth import require_bearer
+    from fwanalyst_server.context import token_label_var
+
+    captured = {}
+
+    async def capturing_app(scope, receive, send):
+        captured["label"] = token_label_var.get()
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    app = require_bearer(capturing_app, primary, creds)
+    _call(app, [(b"authorization", f"Bearer {token}".encode())])
+    return captured.get("label")
+
+
+def test_token_label_var_defaults_outside_http():
+    """stdio mode never runs the middleware — the ContextVar must still read."""
+    from fwanalyst_server.context import token_label_var
+    assert token_label_var.get() == "-"
+
+
+def test_named_token_label_is_resolved():
+    assert _capture_label("eng-tok", _LOGGING_CREDS) == "alice"
+
+
+def test_primary_token_labelled_admin():
+    assert _capture_label("admin-token", _LOGGING_CREDS) == "admin"
+
+
+def test_named_token_without_label_falls_back():
+    assert _capture_label("unlabelled-tok", _LOGGING_CREDS) == "-"
+
+
+def test_primary_token_label_does_not_resolve_via_tokens_list():
+    """The primary token must never be looked up in server.tokens."""
+    from fwanalyst_server.auth import _resolve_token_label
+    assert _resolve_token_label("admin-token", _LOGGING_CREDS) == "-"
+
+
+def test_token_label_var_is_reset_after_request():
+    from fwanalyst_server.context import token_label_var
+    _capture_label("eng-tok", _LOGGING_CREDS)
+    assert token_label_var.get() == "-"
+
+
+def test_tool_invocation_logs_name_and_token_label(caplog):
+    import logging as _logging
+
+    from fwanalyst_server.context import token_label_var
+    from fwanalyst_server.server import _logged
+
+    def get_zones() -> dict:
+        """Docstring preserved."""
+        return {"zones": []}
+
+    wrapped = _logged(get_zones)
+    ctx = token_label_var.set("alice")
+    try:
+        with caplog.at_level(_logging.INFO, logger="fwanalyst_server.server"):
+            wrapped()
+    finally:
+        token_label_var.reset(ctx)
+
+    assert "tool_call tool=get_zones token=alice" in caplog.text
+
+
+def test_tool_wrapper_preserves_identity_and_signature():
+    import inspect
+
+    from fwanalyst_server.server import _logged
+
+    def sample(src: str, count: int = 1) -> dict:
+        """Sample doc."""
+        return {"src": src, "count": count}
+
+    wrapped = _logged(sample)
+    assert wrapped.__name__ == "sample"
+    assert wrapped.__doc__ == "Sample doc."
+    assert inspect.signature(wrapped) == inspect.signature(sample)
+    assert wrapped("a", 2) == {"src": "a", "count": 2}
+
+
+def test_tool_schemas_unchanged_by_logging_wrapper():
+    """FastMCP must derive identical input schemas from wrapped and raw fns."""
+    from mcp.server.fastmcp import FastMCP
+
+    from fortimanager_mcp import server as fmg
+    from fwanalyst_server.server import _logged, mcp as unified
+    from zone_mcp import server as zone
+
+    raw = FastMCP(name="schema-baseline")
+    for fn in (fmg.search_policies, zone.check_ip_traffic, fmg.get_policy):
+        raw.add_tool(fn)
+
+    baseline = {t.name: t.inputSchema for t in asyncio.run(raw.list_tools())}
+    live = {t.name: t.inputSchema for t in asyncio.run(unified.list_tools())}
+    for name, schema in baseline.items():
+        assert live[name] == schema, f"{name} schema drifted"
+
+    # plan_change too — it lives in a `from __future__ import annotations`
+    # module, so its annotations are strings and must still resolve.
+    plan_raw = FastMCP(name="schema-baseline-plan")
+    from fwanalyst_server.server import plan_change
+    plan_raw.add_tool(plan_change)
+    plan_baseline = {t.name: t.inputSchema for t in asyncio.run(plan_raw.list_tools())}
+    assert live["plan_change"] == plan_baseline["plan_change"]
+
+    # sanity: the wrapper is actually in play
+    assert _logged(plan_change).__wrapped__ is plan_change
+
+
+# ---------------------------------------------------------------------------
+# credentials.yaml file permissions
+# ---------------------------------------------------------------------------
+
+def _write_creds(tmp_path, mode):
+    path = tmp_path / "credentials.yaml"
+    path.write_text("server:\n  auth_token: tok\n", encoding="utf-8")
+    path.chmod(mode)
+    return path
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_creds_perms_0600_accepted(tmp_path, monkeypatch):
+    from fwanalyst_server.__main__ import _load_creds
+
+    monkeypatch.setenv("CREDENTIALS_FILE", str(_write_creds(tmp_path, 0o600)))
+    assert _load_creds(http_mode=True) == {"server": {"auth_token": "tok"}}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_creds_perms_0644_refused_in_http_mode(tmp_path, monkeypatch):
+    from fwanalyst_server.__main__ import _load_creds
+
+    monkeypatch.setenv("CREDENTIALS_FILE", str(_write_creds(tmp_path, 0o644)))
+    with pytest.raises(SystemExit) as exc:
+        _load_creds(http_mode=True)
+    assert "chmod 600" in str(exc.value)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_creds_perms_0644_only_warns_in_stdio_mode(tmp_path, monkeypatch, caplog):
+    import logging as _logging
+
+    from fwanalyst_server.__main__ import _load_creds
+
+    monkeypatch.setenv("CREDENTIALS_FILE", str(_write_creds(tmp_path, 0o644)))
+    with caplog.at_level(_logging.WARNING, logger="fwanalyst_server.__main__"):
+        assert _load_creds() == {"server": {"auth_token": "tok"}}
+    assert "chmod 600" in caplog.text
+
+
+def test_missing_creds_file_is_not_a_permission_error(tmp_path, monkeypatch):
+    from fwanalyst_server.__main__ import _load_creds
+
+    monkeypatch.setenv("CREDENTIALS_FILE", str(tmp_path / "absent.yaml"))
+    assert _load_creds(http_mode=True) == {}
+
+
+# ---------------------------------------------------------------------------
+# Direct uvicorn TLS configuration
+# ---------------------------------------------------------------------------
+
+def test_ssl_files_none_when_unconfigured(monkeypatch):
+    from fwanalyst_server.__main__ import _ssl_files
+
+    monkeypatch.delenv("FW_ANALYST_SSL_CERTFILE", raising=False)
+    monkeypatch.delenv("FW_ANALYST_SSL_KEYFILE", raising=False)
+    assert _ssl_files({}) is None
+    assert _ssl_files({"server": {"auth_token": "x"}}) is None
+
+
+def test_ssl_files_from_env(monkeypatch):
+    from fwanalyst_server.__main__ import _ssl_files
+
+    monkeypatch.setenv("FW_ANALYST_SSL_CERTFILE", "/tls/server.crt")
+    monkeypatch.setenv("FW_ANALYST_SSL_KEYFILE", "/tls/server.key")
+    assert _ssl_files({}) == ("/tls/server.crt", "/tls/server.key")
+
+
+def test_ssl_files_env_wins_over_credentials(monkeypatch):
+    from fwanalyst_server.__main__ import _ssl_files
+
+    monkeypatch.setenv("FW_ANALYST_SSL_CERTFILE", "/env/server.crt")
+    monkeypatch.setenv("FW_ANALYST_SSL_KEYFILE", "/env/server.key")
+    creds = {"server": {"ssl_certfile": "/yaml/c.crt", "ssl_keyfile": "/yaml/c.key"}}
+    assert _ssl_files(creds) == ("/env/server.crt", "/env/server.key")
+
+
+def test_ssl_files_from_credentials(monkeypatch):
+    from fwanalyst_server.__main__ import _ssl_files
+
+    monkeypatch.delenv("FW_ANALYST_SSL_CERTFILE", raising=False)
+    monkeypatch.delenv("FW_ANALYST_SSL_KEYFILE", raising=False)
+    creds = {"server": {"ssl_certfile": "/yaml/c.crt", "ssl_keyfile": "/yaml/c.key"}}
+    assert _ssl_files(creds) == ("/yaml/c.crt", "/yaml/c.key")
+
+
+def test_ssl_files_half_configured_exits(monkeypatch):
+    from fwanalyst_server.__main__ import _ssl_files
+
+    monkeypatch.setenv("FW_ANALYST_SSL_CERTFILE", "/tls/server.crt")
+    monkeypatch.delenv("FW_ANALYST_SSL_KEYFILE", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        _ssl_files({})
+    assert "FW_ANALYST_SSL_KEYFILE" in str(exc.value)
+
+    monkeypatch.delenv("FW_ANALYST_SSL_CERTFILE", raising=False)
+    monkeypatch.setenv("FW_ANALYST_SSL_KEYFILE", "/tls/server.key")
+    with pytest.raises(SystemExit) as exc:
+        _ssl_files({})
+    assert "FW_ANALYST_SSL_CERTFILE" in str(exc.value)

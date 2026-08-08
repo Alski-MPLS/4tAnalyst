@@ -42,9 +42,7 @@ Claude Code runs in your terminal. Install it from [claude.ai/code](https://clau
 
 ### Point Claude Code at the central MCP server
 
-The MCP server list lives at `.claude/mcp_servers.json` **inside the checkout you just created** — it's part of the sparse-checkout, so if the team has already committed the real central-server hostname there, you have nothing to configure: it just works after `git pull`.
-
-If it still shows a placeholder (`.mcp.json.example`), copy it to `.mcp.json` and fill in the real hostname:
+The MCP server list lives at `.mcp.json` **inside the checkout you just created**. It's gitignored (it carries your bearer token reference), so copy it from the example that is part of the sparse-checkout and fill in the real hostname:
 
 ```json
 {
@@ -52,13 +50,15 @@ If it still shows a placeholder (`.mcp.json.example`), copy it to `.mcp.json` an
     "4tanalyst": {
       "type": "http",
       "url": "https://<central-server>/mcp",
-      "headers": { "Authorization": "Bearer <FW_ANALYST_TOKEN>" }
+      "headers": {
+        "Authorization": "Bearer ${FW_ANALYST_CLIENT_TOKEN}"
+      }
     }
   }
 }
 ```
 
-Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc. — see `todo.md`). See `docs/workstation-onboarding.md` for the step-by-step setup including how to request your token.
+Claude Code expands `${FW_ANALYST_CLIENT_TOKEN}` from your environment — set it in your shell profile or OS keychain, never paste the token into `.mcp.json` itself. Use `https://`, not `http://` — plain HTTP is not acceptable for this data in a regulated environment (NERC CIP, HIPAA, PCI-DSS, etc. — see `todo.md`). See `docs/workstation-onboarding.md` for the step-by-step setup including how to request your token.
 
 ### Verify connectivity
 

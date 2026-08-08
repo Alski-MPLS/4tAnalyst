@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from feedback_mcp.store import FeedbackStore
 
@@ -75,7 +76,7 @@ mcp = FastMCP(
 # Tool: record_feedback
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 def record_feedback(
     request_id: str,
     recommendation_id: str,
@@ -142,7 +143,7 @@ def record_feedback(
 # Tool: get_similar_cases
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_similar_cases(
     src_zone: str,
     dst_zone: str,
@@ -175,7 +176,7 @@ def get_similar_cases(
 # Tool: get_feedback_summary
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_feedback_summary(days: int = 30) -> dict[str, Any]:
     """
     Return aggregate statistics on team decision patterns over the last N days.
@@ -207,7 +208,7 @@ def get_feedback_summary(days: int = 30) -> dict[str, Any]:
 # Tool: flag_for_review
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False))
 def flag_for_review(
     recommendation_id: str,
     engineer_id: str,
@@ -237,7 +238,7 @@ def flag_for_review(
 # Tool: get_audit_log
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_audit_log(
     ticket_id: str = "",
     engineer_id: str = "",

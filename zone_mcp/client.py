@@ -33,7 +33,10 @@ class ZonePolicyClient:
     ----------
     base_url   : Base URL including scheme and host, e.g. "https://4thealth.internal.example.com"
     token      : Bearer token (the 4th_... value)
-    verify_ssl : Whether to verify the server's TLS certificate (False for self-signed)
+    verify_ssl : Whether/how to verify the server's TLS certificate. Accepts a bool
+                 (False for self-signed, True for a publicly-trusted cert) or a string
+                 path to a CA bundle PEM file for an internal CA — passed straight
+                 through to requests' ``verify`` parameter, which supports both.
     timeout    : Per-request timeout in seconds
     """
 
@@ -41,7 +44,7 @@ class ZonePolicyClient:
         self,
         base_url: str,
         token: str,
-        verify_ssl: bool = False,
+        verify_ssl: bool | str = False,
         timeout: float = 30.0,
     ) -> None:
         self._base = base_url.rstrip("/")

@@ -28,6 +28,7 @@ from typing import Any
 
 import yaml
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 # ---------------------------------------------------------------------------
 # Paths — all relative to this file's directory
@@ -86,7 +87,7 @@ mcp = FastMCP(
 # Tool: get_zone_matrix
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_zone_matrix() -> list[dict[str, Any]]:
     """
     Return the complete zone-pair policy matrix derived from the USP policy
@@ -109,7 +110,7 @@ def get_zone_matrix() -> list[dict[str, Any]]:
 # Tool: check_traffic
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def check_traffic(
     src_zone: str,
     dst_zone: str,
@@ -187,7 +188,7 @@ def check_traffic(
 # Tool: get_naming_convention
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_naming_convention(
     object_type: str,
     platform: str,
@@ -244,7 +245,7 @@ def get_naming_convention(
 # Tool: get_required_log_settings
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_required_log_settings(rule_type: str) -> dict[str, Any]:
     """
     Return the required logging configuration for a firewall rule of the given type.
@@ -284,7 +285,7 @@ def get_required_log_settings(rule_type: str) -> dict[str, Any]:
 # Tool: get_review_requirements
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_review_requirements(risk_level: str) -> dict[str, Any]:
     """
     Return the approval chain and review requirements for a proposed firewall

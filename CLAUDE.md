@@ -74,11 +74,11 @@ uv run python scripts/run_smoke.py
 
 ### fwanalyst_server/
 
-- **`server.py`** — single FastMCP aggregating all 31 per-package tools (via `add_tool`) + `plan_change` (32 total; `tests/test_fwanalyst_auth.py` asserts the count — update it when adding tools).
-- **`context.py`** — Thin shared module: exports `allowed_adoms_var: ContextVar[set[str]]`. Lives here (not in `auth.py`) so `fortimanager_mcp` can import it without a circular dependency.
-- **`auth.py`** — `require_bearer(app, token, creds=None)` ASGI wrapper; constant-time compare; fail-closed (`AuthConfigError` on empty token). When `creds` is provided, resolves the bearer token to an allowed ADOM set via `_resolve_allowed_adoms()` and injects it into `allowed_adoms_var` for the duration of each request. Named per-engineer tokens from `server.tokens` are accepted in addition to the primary admin token.
-- **`rate_limit.py`** — `rate_limit(app, max_requests, window_seconds)` ASGI wrapper; per-`Mcp-Session-Id` sliding-window call budget, `429` past the limit (defaults 300 req/60s, `FW_ANALYST_RATE_LIMIT_MAX`/`FW_ANALYST_RATE_LIMIT_WINDOW_SECONDS`, `MAX=0` disables). Applied inside `require_bearer` in `__main__.py` so unauthenticated requests never consume budget.
-- **`__main__.py`** — `MCP_TRANSPORT=stdio` (default) or `http` (uvicorn + streamable_http_app, path `/mcp`). In HTTP mode also sets `transport_security` (DNS-rebinding protection, `FW_ANALYST_ALLOWED_HOSTS` or `credentials.yaml` `server.allowed_hosts`) — unset keeps the MCP SDK's localhost-only default, which rejects real engineer traffic once deployed to a real hostname. Loads full `credentials.yaml` and passes it to `require_bearer` so per-engineer ADOM restrictions are enforced.
+- **`server.py`** — single FastMCP aggregating all 31 per-package tools (via `add_tool`) + `plan_change` (32 total; `tests/test_fwanalyst_auth.py` asserts the count — update it when adding tools). Every tool is wrapped at `add_tool` time in a `_logged()` decorator (one INFO access-log line per call: tool name + token label, never args/tokens) and given a `ToolAnnotations` (30 `readOnlyHint=True`; `record_feedback`/`flag_for_review` are `readOnlyHint=False`, mutating).
+- **`context.py`** — Thin shared module: exports `allowed_adoms_var: ContextVar[set[str]]` and `token_label_var: ContextVar[str]` (default `"-"`, so stdio mode logs cleanly with no HTTP middleware setting it). Lives here (not in `auth.py`) so `fortimanager_mcp` can import `allowed_adoms_var` without a circular dependency.
+- **`auth.py`** — `require_bearer(app, token, creds=None)` ASGI wrapper; constant-time compare; fail-closed (`AuthConfigError` on empty token). When `creds` is provided, resolves the bearer token to an allowed ADOM set via `_resolve_allowed_adoms()` and to a human-readable label via `_resolve_token_label()` (access-logging only, never an authz input), injecting both into `allowed_adoms_var`/`token_label_var` for the duration of each request. Named per-engineer tokens from `server.tokens` are accepted in addition to the primary admin token.
+- **`rate_limit.py`** — `rate_limit(app, max_requests, window_seconds)` ASGI wrapper; per-`Mcp-Session-Id` sliding-window call budget, `429` past the limit (defaults 300 req/60s, `FW_ANALYST_RATE_LIMIT_MAX`/`FW_ANALYST_RATE_LIMIT_WINDOW_SECONDS`, `MAX=0` disables). Emptied session buckets are pruned; tracked buckets are capped at 1000 with least-recently-active eviction (memory hygiene — the limiter is behind auth, so keying is unchanged). Applied inside `require_bearer` in `__main__.py` so unauthenticated requests never consume budget.
+- **`__main__.py`** — `MCP_TRANSPORT=stdio` (default) or `http` (uvicorn + streamable_http_app, path `/mcp`). In HTTP mode also sets `transport_security` (DNS-rebinding protection, `FW_ANALYST_ALLOWED_HOSTS` or `credentials.yaml` `server.allowed_hosts`) — unset keeps the MCP SDK's localhost-only default, which rejects real engineer traffic once deployed to a real hostname. Loads full `credentials.yaml` and passes it to `require_bearer` so per-engineer ADOM restrictions are enforced. Refuses to start HTTP mode when `credentials.yaml` is group/world-accessible (warns instead in stdio mode). Supports direct uvicorn TLS via `FW_ANALYST_SSL_CERTFILE`/`FW_ANALYST_SSL_KEYFILE` env vars or `credentials.yaml` `server.ssl_certfile`/`ssl_keyfile` (env wins, both-or-neither — a half-set pair refuses to start).
 
 ### Critical data-source warning
 
@@ -246,6 +246,8 @@ server:
       label: "engineer-name" # for logs/audit only
       adoms: ["OT-ADOM"]     # restrict to these ADOMs; ["*"] = unrestricted
   allowed_hosts: []          # host-header allowlist for DNS-rebinding protection
+  ssl_certfile: ""           # optional: direct uvicorn TLS (both-or-neither with ssl_keyfile; env wins)
+  ssl_keyfile: ""
 
 zone_policy:
   base_url: "https://4thealth.internal.example.com"
@@ -258,7 +260,7 @@ zone_policy:
 
 See `todo.md` for the full list. Top blockers:
 1. **Test FortiManager connectivity** — credentials added, not yet fully validated against live FMG (planner CLI is the quickest end-to-end check)
-2. **TLS / nginx reverse proxy** — bearer auth now enforced on port 8000, but transport is still plain HTTP; TLS termination required in any regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.)
+2. **TLS** — no longer blocked on nginx: `fwanalyst_server/__main__.py` supports direct uvicorn TLS via `FW_ANALYST_SSL_CERTFILE`/`FW_ANALYST_SSL_KEYFILE` (see `docs/tls-setup.md`); still required before production in any regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.) — pick direct uvicorn or nginx and enable it
 3. **AI inference path decision** — Bedrock vs. Anthropic direct vs. self-hosted (compliance implications for regulated/sensitive data differ)
 4. **Compliance team engagement** — longest lead time item for deployments touching regulated data (NERC CIP, HIPAA, PCI-DSS, or your organization's own data-classification policy)
 5. **IT/InfoSec approval for Claude Code on workstations**

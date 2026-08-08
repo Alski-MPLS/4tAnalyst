@@ -9,10 +9,14 @@ this is the production entry point (see __main__.py for transport/auth).
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
+
+from fwanalyst_server.context import token_label_var
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +36,29 @@ mcp = FastMCP(
 
 
 # ---------------------------------------------------------------------------
+# Access logging
+# ---------------------------------------------------------------------------
+
+def _logged(fn):
+    """Wrap a tool fn so every invocation emits one INFO access-log line.
+
+    Logs the tool name and the caller's token label only — never arguments
+    (they carry internal IPs) and never the token itself. functools.wraps keeps
+    __name__/__doc__/__wrapped__ intact so FastMCP's schema generation
+    (inspect.signature follows __wrapped__) sees the original function.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        logger.info("tool_call tool=%s token=%s", fn.__name__, token_label_var.get())
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+# ---------------------------------------------------------------------------
 # plan_change — the deterministic planner
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
 def plan_change(
     src: str,
     dst: str,
@@ -108,9 +131,21 @@ def plan_change(
     return payload
 
 
+mcp.add_tool(_logged(plan_change), annotations=ToolAnnotations(readOnlyHint=True))
+
+
 # ---------------------------------------------------------------------------
 # Aggregate the per-package tools
 # ---------------------------------------------------------------------------
+
+# The two feedback tools that write to the store; everything else aggregated
+# here is read-only. Mirrors the annotations on the per-package servers, which
+# add_tool does not carry over.
+_ANNOTATIONS = {
+    "record_feedback": ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    "flag_for_review": ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+}
+
 
 def _register_existing_tools() -> None:
     from standards_mcp import server as standards
@@ -157,7 +192,8 @@ def _register_existing_tools() -> None:
         zone.find_zone_for_ip,
         zone.check_ip_traffic,
     ):
-        mcp.add_tool(fn)
+        mcp.add_tool(_logged(fn), annotations=_ANNOTATIONS.get(
+            fn.__name__, ToolAnnotations(readOnlyHint=True)))
 
 
 _register_existing_tools()

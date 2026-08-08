@@ -277,7 +277,9 @@ def _plan_firewall(
     fw.objects = src_objs + src_groups + dst_objs + dst_groups + svc_objs
 
     fw.policy_name = standards.policy_name(
-        ticket_id, fw.srcintf or "UNKNOWN", fw.dstintf or "UNKNOWN"
+        ticket_id,
+        fw.srcintf or "<SET_SRC_INTERFACE>",
+        fw.dstintf or "<SET_DST_INTERFACE>",
     )
 
     # insertion analysis on the package where the traffic would be evaluated:

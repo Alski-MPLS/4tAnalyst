@@ -122,6 +122,13 @@ sudo chmod 600 /etc/4tanalyst/env
 sudo chown 4tanalyst:4tanalyst /etc/4tanalyst/env
 ```
 
+**Create the directories the unit is allowed to write to** (the unit runs with `ProtectSystem=strict`, so anywhere it writes at runtime must be listed in `ReadWritePaths=` and must exist and be owned by the service user before it starts):
+
+```bash
+sudo mkdir -p /opt/4tanalyst/output /var/lib/4tanalyst
+sudo chown 4tanalyst:4tanalyst /opt/4tanalyst/output /var/lib/4tanalyst
+```
+
 **Install and enable the service:**
 
 ```bash
@@ -209,11 +216,12 @@ git sparse-checkout set .claude scripts .mcp.json.example
 
 ### 3. Configure MCP server connections
 
-Copy the example and fill in the central server hostname and your bearer token:
+Copy the example, fill in the central server hostname, and set your bearer token as an environment variable (not in the file):
 
 ```bash
 cp .mcp.json.example .mcp.json
-# Edit .mcp.json — replace <central-server> and <your-token-here>
+# Edit .mcp.json — replace <central-server>
+export FW_ANALYST_CLIENT_TOKEN="<your-token-here>"   # shell profile or OS keychain
 ```
 
 See [Configuration — Engineer workstations](configuration.md#engineer-workstations) for the full config reference, and `docs/workstation-onboarding.md` for the step-by-step setup.

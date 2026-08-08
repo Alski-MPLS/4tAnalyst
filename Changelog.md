@@ -4,6 +4,51 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-08
+
+### Added
+
+#### Repo hardening: workstation config, security boundary, CI, runtime (`fwanalyst_server`, `zone_mcp`, CI, Docker, systemd)
+
+Implements `docs/plans/2026-08-08-repo-hardening-plan.md` (four-question review + devil's-advocate pass). 258 tests pass; gitleaks full-history scan clean.
+
+**Workstation connection**
+- Root `.mcp.json.example` (replaces `.claude/mcp_servers.json.example`, a path Claude Code never read), using `${FW_ANALYST_CLIENT_TOKEN}` Claude Code env expansion so engineer tokens live in env/keychain, never a plaintext file.
+- `.mcp.json` and the untracked `docs/zone-name-mapping.md` added to `.gitignore` — the onboarding docs claimed `.mcp.json` was already ignored; it wasn't.
+
+**`fwanalyst_server/rate_limit.py`**
+- Emptied session buckets are dropped after pruning instead of persisting forever.
+- Tracked buckets capped at 1000, evicting the least-recently-active session once the cap is hit. Session-ID keying unchanged — the limiter runs behind auth, so this is memory hygiene, not a security control.
+
+**Access logging (`fwanalyst_server/context.py`, `auth.py`, `server.py`)**
+- New `token_label_var` ContextVar (alongside `allowed_adoms_var`), set in `require_bearer` from the resolved token's label (`"admin"` for the primary token, the `server.tokens` label for named ones).
+- Every tool on the unified server is wrapped at `add_tool` time with a `_logged()` wrapper that emits one INFO line per call — tool name + token label only, never arguments or the token itself.
+
+**`fwanalyst_server/__main__.py`**
+- Refuses to start in HTTP mode when `credentials.yaml` is group/world-accessible (warns instead in stdio mode) — the file holds FortiManager API keys and every bearer token.
+- Direct uvicorn TLS: `FW_ANALYST_SSL_CERTFILE`/`FW_ANALYST_SSL_KEYFILE` env vars (or `credentials.yaml` `server.ssl_certfile`/`ssl_keyfile`, env wins), both-or-neither — a half-set pair refuses to start rather than silently falling back to plain HTTP. See `docs/tls-setup.md`.
+
+**MCP hygiene**
+- `ToolAnnotations` added to all 32 unified-server tools (30 `readOnlyHint=True`; `record_feedback` and `flag_for_review` marked mutating, `readOnlyHint=False`), plus the equivalent per-package annotations.
+
+**`zone_mcp/client.py`, `zone_mcp/server.py`**
+- `verify_ssl` now accepts a CA-bundle path string (not just a bool) for an internal CA, passed straight through to `requests`' `verify` parameter — preferred over `verify_ssl: false`.
+
+**Supply chain / runtime**
+- `constraints.txt` pins install versions in `Dockerfile.dev` and CI.
+- CI gained `pip-audit` and `gitleaks` jobs; `.github/dependabot.yml` added (pip weekly + GitHub Actions).
+- `Dockerfile.dev` runs as a non-root user; `systemd/4tanalyst.service` gained `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict` with `ReadWritePaths=` covering `feedback.db` (+ `-wal`/`-shm`) and `output/`.
+
+**`SECURITY.md`**
+- New token-rotation procedure (admin token and per-engineer tokens); documents the direct-uvicorn TLS option and the "401 is healthy" liveness convention (also added to `docs/troubleshooting.md`).
+
+**New tests**
+- `tests/test_fwanalyst_auth.py` — 232 lines added: token-label resolution/ContextVar injection, credential-permission gating, TLS env/yaml precedence, tool-count/annotation assertions.
+- `tests/test_rate_limit.py` — bucket pruning and the 1000-session eviction cap.
+- `tests/test_zone_client.py` — CA-bundle-path `verify_ssl` passthrough.
+
+---
+
 ## [Unreleased] — 2026-08-05 (3)
 
 ### Fixed

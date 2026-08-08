@@ -65,7 +65,9 @@ Design rule: **the LLM orchestrates, code computes.** Everything that must be
 right — rule coverage, object reuse, insertion point, CLI — is computed by
 `planner/` and covered by unit tests. Firewall credentials live only on the
 central server; engineers authenticate to it with a bearer token (per-engineer
-identity planned for Phase 4). Engineers never need direct API access.
+identity planned for Phase 4). Engineers never need direct API access. TLS can
+be terminated directly by the server (`FW_ANALYST_SSL_CERTFILE`/`FW_ANALYST_SSL_KEYFILE`)
+or by a reverse proxy in front of it — see [docs/tls-setup.md](docs/tls-setup.md).
 
 ## Quick start
 

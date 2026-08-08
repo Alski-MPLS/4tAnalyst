@@ -15,7 +15,7 @@ All API credentials are stored on the central MCP server only. Engineer workstat
 
 The central MCP server should have:
 - **Outbound only** to FortiManager and 4THealth management IPs on port 443 (and NetBrain when integration is ready)
-- **Inbound** from engineer workstation subnets on port 8000 only (unified server, bearer-token auth; front with TLS)
+- **Inbound** from engineer workstation subnets on port 8000 only (unified server, bearer-token auth; front with TLS — either a reverse proxy or the server's own direct-uvicorn TLS option, see `docs/tls-setup.md`)
 - **No internet access** required
 
 Engineer workstations need only outbound HTTPS to the central server. No direct firewall management API access is required or recommended.
@@ -42,6 +42,8 @@ All tool outputs — zone policy verdicts, rule search results, naming validatio
 The audit log records an `engineer_id` string provided by the engineer at time of decision. This is **not authenticated** — any string can be entered. For audit purposes in a regulated environment (NERC CIP, HIPAA, PCI-DSS, or your organization's own change-management standard), do not rely solely on the audit log for identity verification until authenticated identity (AD/Entra) is implemented.
 
 Until then, cross-reference recorded decisions against ServiceNow ticket history and CAB records for audit evidence. Do not begin recording official change decisions until this limitation is understood and accepted by the compliance team.
+
+**Separately, the unified server emits an access log** (stdout/journald, not the feedback_mcp SQLite audit log above): one INFO line per tool call with the tool name and the caller's token label (`server.tokens` label, or `"admin"` for the primary token) — never call arguments or the token itself. This is infrastructure-level access logging, not a substitute for the decision-level audit trail in `feedback_mcp`.
 
 ## Regulated-environment compliance posture
 

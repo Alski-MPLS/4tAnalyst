@@ -80,10 +80,20 @@ Short, actionable repository-specific guidance for Copilot/assistant sessions.
   dicts; avoid global I/O in evaluation logic.
 - Security-sensitive files:
   - Do not commit credentials.yaml or any file containing API keys, internal IPs,
-    or hostnames. credentials.yaml.example exists as a template.
+    or hostnames. credentials.yaml.example exists as a template. `__main__.py`
+    refuses to start in HTTP mode (warns in stdio) when credentials.yaml is
+    group/world-accessible.
   - `fwanalyst_server/auth.py` resolves bearer tokens to per-engineer ADOM
-    restrictions (`server.tokens` in credentials.yaml); see context.py for the
-    `allowed_adoms_var` ContextVar it injects per request.
+    restrictions (`server.tokens` in credentials.yaml) and to a token label for
+    access logging; see context.py for the `allowed_adoms_var`/`token_label_var`
+    ContextVars it injects per request. Every unified-server tool logs one INFO
+    line per call (tool name + token label, never args/tokens).
+  - Workstation tokens: root `.mcp.json.example` uses `${FW_ANALYST_CLIENT_TOKEN}`
+    env expansion — tokens never sit in a plaintext committed file; `.mcp.json`
+    itself is gitignored.
+  - TLS: `FW_ANALYST_SSL_CERTFILE`/`FW_ANALYST_SSL_KEYFILE` (or the matching
+    credentials.yaml `server.ssl_certfile`/`ssl_keyfile` keys) enable direct
+    uvicorn TLS, both-or-neither — see docs/tls-setup.md.
 - Developer run modes:
   - stdio mode (`uv run python -m <pkg>.server` or `python -m fwanalyst_server`)
     for quick debugging; `MCP_TRANSPORT=http` for production-like behaviour.

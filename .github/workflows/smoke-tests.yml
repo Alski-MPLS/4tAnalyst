@@ -54,12 +54,20 @@ jobs:
           pytest -q tests/
 
       - name: Run pip-audit
+        # --skip-editable: the seven local -e packages aren't on PyPI and can't
+        # be audited; their third-party dependencies still are. Vulnerability
+        # findings still fail the job.
         run: |
           pip install pip-audit
-          pip-audit
+          pip-audit --skip-editable
 
   gitleaks:
     runs-on: ubuntu-latest
+    # gitleaks-action lists PR commits via the API on pull_request events;
+    # the default token has no PR scope and 403s without this.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4

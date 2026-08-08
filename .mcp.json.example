@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://<central-server>:8000/mcp",
       "headers": {
-        "Authorization": "Bearer <FW_ANALYST_TOKEN>"
+        "Authorization": "Bearer ${FW_ANALYST_CLIENT_TOKEN}"
       }
     }
   }

@@ -2,11 +2,30 @@
 
 The 4tAnalyst MCP server listens on port 8000 over plain HTTP. Before engineers connect from their workstations — especially in any regulated environment (NERC CIP, HIPAA, PCI-DSS, SOX) — TLS must be in place so that bearer tokens and firewall data are not transmitted in cleartext.
 
-The recommended approach is an **nginx reverse proxy** on the same server that terminates TLS on port 443 and forwards traffic to port 8000 locally. The 4tAnalyst service itself does not change.
+Two paths are covered below:
+- **Direct uvicorn TLS** — simplest for a pilot: uvicorn terminates TLS itself, no reverse proxy. Fewer moving parts, but no rotation/mTLS/HA story.
+- **nginx reverse proxy** — the scale-up path once you need certificate rotation, mTLS, or to put more than one service behind the same host. Two certificate options are covered under it:
+  - **Option A: Self-signed certificate** — quick to set up, suitable for lab/pilot use; engineers must trust the cert manually
+  - **Option B: Internal CA certificate** — proper for production; uses your organization's certificate authority so engineers trust it automatically via their existing domain trust
 
-Two certificate options are covered below:
-- **Option A: Self-signed certificate** — quick to set up, suitable for lab/pilot use; engineers must trust the cert manually
-- **Option B: Internal CA certificate** — proper for production; uses your organization's certificate authority so engineers trust it automatically via their existing domain trust
+---
+
+## Option: direct uvicorn TLS (simplest for pilot)
+
+uvicorn (the ASGI server `fwanalyst_server/__main__.py` runs under in HTTP mode) accepts `ssl_certfile`/`ssl_keyfile` directly — no nginx, no reverse proxy, one process terminates TLS and serves `/mcp`. This is the fastest way to get off plain HTTP for a pilot; graduate to the nginx path below when you need certificate rotation without a restart, mTLS, or to host more than one service on the box.
+
+Get a cert from your internal CA the same way as Option B below (CSR → sign → copy `server.crt`/`server.key` to the server), then point the server at them via environment variables:
+
+```bash
+export FW_ANALYST_SSL_CERTFILE=/etc/4tanalyst/tls/server.crt
+export FW_ANALYST_SSL_KEYFILE=/etc/4tanalyst/tls/server.key
+```
+
+Setting both env vars is sufficient: `fwanalyst_server/__main__.py` starts uvicorn with `ssl_certfile=`/`ssl_keyfile=` when they are present. The equivalent `credentials.yaml` keys are `server.ssl_certfile` / `server.ssl_keyfile`; the environment variables win, matching the precedence used for `FW_ANALYST_TOKEN` and `FW_ANALYST_ALLOWED_HOSTS`. Set **both or neither** — setting only one is a configuration error and the server refuses to start rather than silently falling back to plain HTTP.
+
+**Critical coupling — do not skip this:** the hostname engineers connect to (the TLS cert's CN/SAN) must also be added to `FW_ANALYST_ALLOWED_HOSTS` (or `credentials.yaml` `server.allowed_hosts`). DNS-rebinding protection checks the `Host` header against that allowlist independently of TLS — a valid cert with an unlisted hostname still gets every engineer request rejected. See [Configuration](configuration.md) for `FW_ANALYST_ALLOWED_HOSTS`.
+
+With this approach the server listens on 443 directly (or another port of your choosing) — there is no separate nginx `location /mcp` config to keep in sync, and no `127.0.0.1:8000`-only lockdown step. Firewall/security-group rules should still restrict inbound access to the engineer subnet.
 
 ---
 
@@ -254,7 +273,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://<server-hostname>/mcp
 
 ## Update engineer MCP config
 
-Once TLS is live, engineers update their `.claude/mcp_servers.json` URL from `http://` to `https://` and change the port from `8000` to `443`:
+Once TLS is live, engineers update their `.mcp.json` URL from `http://` to `https://` and change the port from `8000` to `443` (or whatever port direct uvicorn TLS was configured on):
 
 ```json
 {
@@ -262,7 +281,9 @@ Once TLS is live, engineers update their `.claude/mcp_servers.json` URL from `ht
     "4tanalyst": {
       "type": "http",
       "url": "https://<server-hostname-or-ip>/mcp",
-      "headers": { "Authorization": "Bearer <your-token-here>" }
+      "headers": {
+        "Authorization": "Bearer ${FW_ANALYST_CLIENT_TOKEN}"
+      }
     }
   }
 }

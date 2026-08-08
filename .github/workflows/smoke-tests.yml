@@ -44,7 +44,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest openpyxl
-          pip install -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
+          pip install -c constraints.txt -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
             -e intake_mcp/ -e zone_mcp/ -e planner/ -e fwanalyst_server/
 
       - name: Run unit tests
@@ -52,6 +52,24 @@ jobs:
           PYTHONPATH: .
         run: |
           pytest -q tests/
+
+      - name: Run pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   smoke-tests:
     runs-on: ubuntu-latest

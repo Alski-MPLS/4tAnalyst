@@ -138,6 +138,29 @@ If you suspect a token was compromised (exposed in a chat log, committed to git,
 
 If your deployment has a single team and all engineers need full access, set `adom_restriction: false` in `credentials.yaml`. Every recognized token (primary `auth_token` and all `tokens` entries) gets unrestricted access. Unrecognized tokens are still rejected with 401.
 
+### Token rotation
+
+There is no automatic expiry — tokens are valid until removed from `credentials.yaml`. Rotate on a schedule, not just on suspected exposure.
+
+**Rotating the admin token (`server.auth_token`):**
+1. Generate a new value: `openssl rand -hex 32`
+2. Update `auth_token` in `credentials.yaml` (or the `FW_ANALYST_TOKEN` env var, which takes precedence if set — update it there instead, or in addition, depending on how the unit/container is configured)
+3. Restart the unified server: `systemctl restart 4tanalyst` (or however it's managed at your site)
+4. Distribute the new token to every holder over a secure channel (see "Sending the token to the engineer" above) — every consumer of the old admin token loses access the moment the server restarts
+
+**Rotating a per-engineer token:**
+1. Generate a new value: `openssl rand -hex 32`
+2. Replace the `token` field on that engineer's entry under `server.tokens` in `credentials.yaml` — keep the `label` and `adoms` unchanged
+3. Restart the server
+4. Send the new token to the engineer over a secure channel; the old value stops working immediately on restart
+
+**When to rotate:**
+- **Immediately** on suspected exposure (committed to git, pasted in an unencrypted channel, screen-shared, laptop lost/stolen) — do not wait for a scheduled rotation
+- **On team membership change** — rotate (or revoke, if the engineer is leaving) any per-engineer token when someone joins, leaves, or changes roles/ADOM scope
+- **Periodically** as a baseline hygiene practice (e.g., annually, or per your org's credential-rotation policy), even with no known exposure
+
+Both rotation paths require a server restart (tokens are read from `credentials.yaml`/env at startup, not reloaded live). The server carries no session state, so a restart is safe at any time — every connected engineer simply reconnects, no in-flight work is lost beyond the current request.
+
 ---
 
 ## Reporting vulnerabilities

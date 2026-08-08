@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/standards_mcp"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/fortimanager_mcp"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/feedback_mcp"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/intake_mcp"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/zone_mcp"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/planner"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/fwanalyst_server"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

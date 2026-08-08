@@ -10,6 +10,7 @@ Entry point for the unified server.
 
 import logging
 import os
+import stat
 import threading
 from pathlib import Path
 
@@ -40,13 +41,60 @@ def _auth_token() -> str:
     return ""
 
 
-def _load_creds() -> dict:
+def _check_creds_permissions(creds_path: Path, http_mode: bool) -> None:
+    """Refuse (HTTP) or warn (stdio) when credentials.yaml is group/world-readable.
+
+    The file holds FortiManager API keys and every bearer token, so on a shared
+    VM its mode is part of the auth boundary. Skipped where POSIX modes are not
+    meaningful (Windows), since os.stat reports them inaccurately there.
+    """
+    if os.name != "posix":
+        return
+    mode = creds_path.stat().st_mode
+    if not mode & (stat.S_IRWXG | stat.S_IRWXO):
+        return
+    detail = (
+        f"{creds_path} is group/world-accessible (mode {stat.S_IMODE(mode):04o}). "
+        f"It holds FortiManager API keys and bearer tokens — run: "
+        f"chmod 600 {creds_path}"
+    )
+    if http_mode:
+        raise SystemExit(f"Refusing to serve HTTP: {detail}")
+    logger.warning("Insecure credentials file permissions: %s", detail)
+
+
+def _load_creds(http_mode: bool = False) -> dict:
     """Load the full credentials dict (for ADOM restriction config)."""
     creds_path = Path(os.getenv("CREDENTIALS_FILE", str(_REPO_ROOT / "credentials.yaml")))
     if creds_path.exists():
+        _check_creds_permissions(creds_path, http_mode)
         with open(creds_path, encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     return {}
+
+
+def _ssl_files(creds: dict) -> tuple[str, str] | None:
+    """Return (certfile, keyfile) for direct uvicorn TLS, or None when unset.
+
+    FW_ANALYST_SSL_CERTFILE/FW_ANALYST_SSL_KEYFILE win over credentials.yaml
+    server.ssl_certfile/ssl_keyfile, matching the precedence used for the auth
+    token and allowed hosts. Both or neither — half a TLS config would
+    otherwise start silently on plain HTTP. See docs/tls-setup.md.
+    """
+    server_cfg = creds.get("server", {})
+    certfile = (os.getenv("FW_ANALYST_SSL_CERTFILE", "")
+                or str(server_cfg.get("ssl_certfile", "") or "")).strip()
+    keyfile = (os.getenv("FW_ANALYST_SSL_KEYFILE", "")
+               or str(server_cfg.get("ssl_keyfile", "") or "")).strip()
+    if not certfile and not keyfile:
+        return None
+    if not certfile or not keyfile:
+        missing = "FW_ANALYST_SSL_CERTFILE" if not certfile else "FW_ANALYST_SSL_KEYFILE"
+        raise SystemExit(
+            f"TLS is half-configured: {missing} (or the matching credentials.yaml "
+            "server.ssl_certfile/ssl_keyfile key) is unset. Set both or neither."
+        )
+    return certfile, keyfile
 
 
 def _allowed_hosts() -> list[str]:
@@ -148,11 +196,16 @@ def _start_catalog_warmup(creds: dict) -> None:
 def main() -> None:
     transport = os.getenv("MCP_TRANSPORT", "stdio")
     if transport == "stdio":
+        _load_creds()  # warns (does not refuse) on loose credentials-file perms
         mcp.run()
         return
 
     if transport not in ("http", "streamable-http"):
         raise SystemExit(f"Unsupported MCP_TRANSPORT {transport!r} (use stdio or http)")
+
+    # Loaded (and permission-checked) before anything binds a socket.
+    creds = _load_creds(http_mode=True)
+    ssl_files = _ssl_files(creds)
 
     import uvicorn
 
@@ -170,7 +223,6 @@ def main() -> None:
 
     app = mcp.streamable_http_app()
 
-    creds = _load_creds()
     _start_catalog_warmup(creds)
 
     max_requests = int(os.getenv("FW_ANALYST_RATE_LIMIT_MAX", str(_DEFAULT_RATE_LIMIT_MAX)))
@@ -182,7 +234,13 @@ def main() -> None:
     app = require_bearer(app, _auth_token(), creds)
     timeout = float(os.getenv("FW_ANALYST_REQUEST_TIMEOUT", "540"))
     app = request_timeout(app, timeout)
-    uvicorn.run(app, host=host, port=port)
+    if ssl_files:
+        certfile, keyfile = ssl_files
+        logger.info("TLS enabled (cert %s)", certfile)
+        uvicorn.run(app, host=host, port=port,
+                    ssl_certfile=certfile, ssl_keyfile=keyfile)
+    else:
+        uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

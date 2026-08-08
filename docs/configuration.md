@@ -44,9 +44,11 @@ auth flows on the JSON-RPC API:
 zone_policy:
   base_url: "https://<4thealth-host-or-ip>"
   token: "4th_your-token-here"
-  verify_ssl: false           # set true if the server has a valid cert
-  timeout: 30                 # per-request timeout in seconds
+  verify_ssl: "/path/to/internal-ca.pem"   # prefer a CA bundle path over `false`
+  timeout: 30                              # per-request timeout in seconds
 ```
+
+`verify_ssl` accepts a bool (`false` to skip verification — self-signed cert, not recommended past pilot; `true` to verify against the system trust store) or a string path to a CA bundle PEM file, passed straight through to `requests`' `verify` parameter. Prefer the CA bundle path over `false` once your internal CA can issue a cert for the 4THealth host.
 
 The Bearer token is issued by the 4THealth application admin. Store it in the `token` field — the `Bearer ` prefix is added automatically.
 
@@ -80,7 +82,7 @@ Create `.mcp.json` in the workstation checkout root (copy from the example shipp
 cp .mcp.json.example .mcp.json
 ```
 
-Then fill in the real hostname and your bearer token:
+Then fill in the real hostname:
 
 ```json
 {
@@ -88,13 +90,15 @@ Then fill in the real hostname and your bearer token:
     "4tanalyst": {
       "type": "http",
       "url": "https://<central-server>/mcp",
-      "headers": { "Authorization": "Bearer <your-token-here>" }
+      "headers": {
+        "Authorization": "Bearer ${FW_ANALYST_CLIENT_TOKEN}"
+      }
     }
   }
 }
 ```
 
-`.mcp.json` is gitignored — your token will never be committed. Use `https://` on port 443 (nginx terminates TLS and proxies to the internal uvicorn process on port 8000 — do not connect to port 8000 directly from workstations).
+Claude Code expands `${FW_ANALYST_CLIENT_TOKEN}` from your environment at connect time — set it in your shell profile or OS keychain, do not paste the token into the file. `.mcp.json` is gitignored regardless, as defense in depth. Use `https://` on port 443 (nginx terminates TLS and proxies to the internal uvicorn process on port 8000 — do not connect to port 8000 directly from workstations).
 
 See `docs/workstation-onboarding.md` for the full step-by-step setup including how to request a bearer token.
 

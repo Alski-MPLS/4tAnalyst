@@ -12,7 +12,13 @@
    curl -X POST http://<server-ip>:8000/mcp   # expect HTTP 401 (auth enforced)
    ```
    A healthy server returns `401 Unauthorized` without a token (that's the auth wrapper working). A refused connection means the server isn't up. A timeout means a network/firewall issue between your workstation and the server.
-4. Check that `.claude/mcp_servers.json` has the correct URL and a current bearer token
+4. Check that `.mcp.json` has the correct URL and that `FW_ANALYST_CLIENT_TOKEN` is set and current in your environment
+
+---
+
+## Health checking
+
+There is deliberately no unauthenticated health endpoint. A `401 Unauthorized` from `GET`/`POST /mcp` **without** a token means the server is up and auth is enforced — that's the liveness signal, not a failure. `scripts/run_smoke.py` relies on exactly this convention (asserts `401` without a token, non-`401` with one). A refused connection or timeout, not a `401`, is what indicates the server is actually down or unreachable.
 
 ---
 

@@ -32,6 +32,7 @@ import logging
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from intake_mcp.parser import parse_spreadsheet, parse_manual_entry
 
@@ -55,7 +56,7 @@ mcp = FastMCP(
 # Tool: parse_spreadsheet
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def parse_spreadsheet_file(file_path: str) -> dict[str, Any]:
     """
     Parse a firewall request spreadsheet (.xlsx).
@@ -121,7 +122,7 @@ def parse_spreadsheet_file(file_path: str) -> dict[str, Any]:
 # Tool: parse_manual_entry
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def parse_manual_entry_tool(fields_json: str) -> dict[str, Any]:
     """
     Accept a firewall request entered manually (not from a spreadsheet).
@@ -197,7 +198,7 @@ def parse_manual_entry_tool(fields_json: str) -> dict[str, Any]:
 # Tool: describe_template
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def describe_template() -> dict[str, Any]:
     """
     Return the expected structure of the firewall request spreadsheet

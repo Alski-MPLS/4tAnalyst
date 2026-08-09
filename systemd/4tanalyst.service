@@ -1,0 +1,40 @@
+[Unit]
+Description=4tAnalyst unified MCP server (streamable-HTTP + bearer auth)
+After=network.target
+
+[Service]
+Type=simple
+User=4tanalyst
+WorkingDirectory=/opt/4tanalyst
+Environment=MCP_TRANSPORT=http
+Environment=FASTMCP_HOST=0.0.0.0
+Environment=FASTMCP_PORT=8000
+# feedback_mcp defaults FEEDBACK_DB to <repo-root>/feedback.db; pointing it at
+# a dedicated directory (rather than the repo root, which is otherwise
+# read-only under ProtectSystem=strict below) keeps the writable surface
+# small and matches the ReadWritePaths= entry below. WAL mode also creates
+# -wal/-shm siblings next to the db file, so the whole directory must be
+# writable, not just the file.
+Environment=FEEDBACK_DB=/var/lib/4tanalyst/feedback.db
+# Set the auth token in an env file readable only by the service user;
+# never commit it. FW_ANALYST_TOKEN overrides credentials.yaml server.auth_token.
+EnvironmentFile=/etc/4tanalyst/env
+# Adjust ExecStart to point at the correct Python/uv environment on the host
+ExecStart=/opt/4tanalyst/.venv/bin/python -m fwanalyst_server
+Restart=on-failure
+RestartSec=5
+
+# Hardening. ProtectSystem=strict makes the whole filesystem read-only except
+# the paths listed below; without ReadWritePaths= covering everywhere the
+# server actually writes, the unit fails at runtime instead of just being
+# more secure. output/ holds /analyze-request's report.html/implementation.conf;
+# /var/lib/4tanalyst holds feedback.db (+ its -wal/-shm siblings, hence the
+# directory, not just the file). Create both and chown them to the service
+# user before starting the unit.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/4tanalyst/output /var/lib/4tanalyst
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,212 @@
+# naming.yaml
+# Object naming conventions for FortiGate (FortiManager-managed).
+# Edit this file to match your team's actual standards.
+# Referenced by: get_naming_convention() and get_required_log_settings() MCP tools.
+
+platforms:
+
+  fortigate:
+    conventions:
+
+      host:
+        pattern: "H_<IP_ADDRESS>"
+        examples:
+          - "H_10.14.59.1"
+          - "H_172.16.5.200"
+        notes: >
+          Single host objects (type=ipmask with /32).
+          Check existing objects in the ADOM before creating — use search_address_objects first.
+
+      network:
+        pattern: "N_<NETWORK_ADDRESS>_<PREFIX_LEN>"
+        examples:
+          - "N_10.32.0.0_13"
+          - "N_10.8.0.0_16"
+        notes: >
+          Use type=ipmask. Replace the slash with underscore to keep names filesystem-safe.
+
+      range:
+        pattern: "R_<FIRST_IP>-<LAST_IP>"
+        examples:
+          - "R_10.14.59.1-10.14.59.10"
+        notes: >
+          Use type=iprange. Prefer network objects wherever CIDR alignment is clean.
+
+      address_group:
+        pattern: "AG_<PURPOSE_OR_SYSTEM>_<ZONE_ABBREV>"
+        examples:
+          - "AG_HISTORIAN_OT"
+          - "AG_JUMP_SERVERS_MGMT"
+        notes: >
+          Check the global ADOM for an existing group before creating a per-ADOM object.
+
+      service:
+        pattern: "SVC_<PROTO>_<PORT>"
+        examples:
+          - "SVC_TCP_8443"
+          - "SVC_UDP_162"
+        notes: >
+          Only create custom service objects for non-standard ports.
+          Use predefined FortiGate service objects (SSH, RDP, HTTPS, etc.) for standard ports.
+
+      service_group:
+        pattern: "SVCG_<PURPOSE>"
+        examples:
+          - "SVCG_OT_HISTORIAN"
+          - "SVCG_REMOTE_MGMT"
+        notes: >
+          Group names must describe the business function.
+          Check the global ADOM object database before creating ADOM-level groups.
+
+      policy:
+        pattern: "<TICKET_ID>_<SRC_INTF>_TO_<DST_INTF>_<SEQ>"
+        examples:
+          - "CHG0012345_OT_LAN_TO_IT_001"
+          - "CHG0012346_WAN_TO_DMZ_001"
+        notes: >
+          Sequence number (_001, _002) allows multiple rules per ticket.
+          Interface abbreviations must match the device interface map from get_interface_map.
+
+      nat_rule:
+        pattern: "NAT_<TICKET_ID>_<TYPE>_<SEQ>"
+        examples:
+          - "NAT_CHG0012345_SNAT_001"
+          - "NAT_CHG0012346_DNAT_001"
+        notes: >
+          TYPE is SNAT (source NAT) or DNAT (destination NAT).
+          Must be linked to the same change ticket as the policy rule.
+
+      vip:
+        pattern: "VIP_<TICKET_ID>_<SEQ>"
+        examples:
+          - "VIP_CHG0012345_001"
+          - "VIP_CHG0012346_001"
+        notes: >
+          Used for `config firewall vip` (destination NAT / virtual IP) objects,
+          distinct from `nat_rule` which covers source NAT. Must be linked to the
+          same change ticket as the policy rule and any associated nat_rule object.
+
+
+# Abbreviated zone names used in policy/rule naming conventions above.
+zone_abbrevs:
+  "NETZONE CIP-H-All": "CIPH"
+  "NETZONE CIP-H-ControlCenter": "CIPH_CC"
+  "NETZONE OT-All": "OT"
+  "NETZONE OT Mgmt": "OT_MGMT"
+  "NETZONE Gas-SCADA": "GAS_SCADA"
+  "NETZONE IT Corporate (non-user)": "IT_CORP"
+  "NETZONE IT DMZ": "IT_DMZ"
+  "NETZONE Corp Internal": "CORP_INT"
+  "Users Networks": "USERS"
+  "Internet": "INET"
+  "Internet NAT": "INET_NAT"
+  "Remote Access": "RA"
+  "Public Cloud": "CLOUD"
+  "Misc-Unknown": "MISC"
+
+
+# Log settings referenced by get_required_log_settings().
+log_settings:
+
+  allow_internet_inbound:
+    log_start: true
+    log_end: true
+    alert_on_match: false
+    retention_days: 180
+    siem_forward: true
+    notes: >
+      Inbound rules sourced from the Internet catch-all zone (includes any
+      IP that did not resolve to a named zone). Log session start and end,
+      always forward to SIEM, extended retention. Highest-scrutiny profile —
+      pair with critical-risk approval chain.
+
+  allow_internet_outbound:
+    log_start: false
+    log_end: true
+    alert_on_match: false
+    retention_days: 90
+    siem_forward: true
+    notes: >
+      Standard outbound internet rules. Log session-end for traffic accounting.
+      Forward to SIEM for anomaly detection. No start-of-session log needed
+      (volume would be excessive).
+
+  allow_internal:
+    log_start: false
+    log_end: true
+    alert_on_match: false
+    retention_days: 90
+    siem_forward: false
+    notes: >
+      Internal east-west flows between defined zones. Log session-end only.
+      SIEM forwarding optional unless flow touches a CIP or OT zone.
+
+  allow_ot_to_it:
+    log_start: true
+    log_end: true
+    alert_on_match: false
+    retention_days: 365
+    siem_forward: true
+    notes: >
+      OT-to-IT or OT-to-CIP flows require full session logging (start and end)
+      due to regulatory compliance requirements for critical-infrastructure zones
+      (NERC CIP in this environment; substitute your own regime's equivalent).
+      Retain for 1 year. Must forward to SIEM.
+
+  allow_it_to_ot:
+    log_start: true
+    log_end: true
+    alert_on_match: true
+    retention_days: 365
+    siem_forward: true
+    notes: >
+      IT-to-OT flows are high-risk. Log start and end, forward to SIEM,
+      and trigger an alert on each new connection for security monitoring.
+      1-year retention for regulatory audit evidence (NERC CIP in this
+      environment; substitute your own regime's retention requirement).
+
+  block_all:
+    log_start: false
+    log_end: true
+    alert_on_match: false
+    retention_days: 90
+    siem_forward: true
+    notes: >
+      Block rules should log hits for detection and audit purposes.
+      Forward blocked traffic to SIEM. High-volume block rules (e.g. Internet inbound)
+      may need rate-limiting on the log forwarding to avoid SIEM flooding.
+
+  block_specific_service:
+    log_start: false
+    log_end: true
+    alert_on_match: true
+    retention_days: 180
+    siem_forward: true
+    notes: >
+      Service-specific block rules (block-only) should alert on every hit —
+      hitting a targeted block usually indicates a misconfigured client or recon.
+      Forward to SIEM and retain for 6 months.
+
+  nat:
+    log_start: false
+    log_end: true
+    alert_on_match: false
+    retention_days: 90
+    siem_forward: false
+    notes: >
+      NAT rules follow the logging of their associated security rule.
+      Log session-end. No additional SIEM forwarding required beyond the
+      security policy rule that permits the flow.
+
+  management_access:
+    log_start: true
+    log_end: true
+    alert_on_match: true
+    retention_days: 365
+    siem_forward: true
+    notes: >
+      Rules that allow management access (SSH, RDP, HTTPS to management interfaces)
+      must log all sessions with start and end, alert on every hit, forward to SIEM,
+      and retain for 1 year. Interactive-access logging requirement common to
+      regulated environments (NERC CIP-005 in this environment; HIPAA, PCI-DSS,
+      and SOX have comparable requirements).

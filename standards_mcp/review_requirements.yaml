@@ -1,0 +1,86 @@
+# review_requirements.yaml
+# Approval chains and review requirements per risk level.
+# Edit this file to match your team's actual change management process.
+# Referenced by: get_review_requirements() MCP tool.
+#
+# Risk levels are assigned by the recommendation engine based on:
+#   low      - internal east-west between same security domain, non-sensitive zones
+#   medium   - cross-domain, touches IT DMZ, Users Networks, or Remote Access
+#   high     - touches OT zones, CIP zones, internet-exposed, or privilege escalation path
+#   critical - touches CIP-H (this environment's regulated BES Cyber Systems zone under
+#              NERC CIP; substitute your own regime's most-sensitive-zone designation if
+#              deploying elsewhere — a PCI cardholder-data zone, a HIPAA-scoped clinical zone, etc.),
+#              Nuclear, Financial Systems, or is an exception to an explicit block-all rule
+
+risk_levels:
+
+  low:
+    approvers:
+      - "Requesting engineer's team lead"
+    peer_review: false
+    security_review: false
+    change_window: "Standard — any business-hours maintenance window"
+    sla_hours: 24
+    notes: >
+      Low-risk changes (internal east-west, same security domain) require only
+      team lead approval. No dedicated peer review or security sign-off needed.
+      Can be implemented in any business-hours window with standard change ticket.
+
+  medium:
+    approvers:
+      - "Requesting engineer's team lead"
+      - "Network security engineer (peer review)"
+    peer_review: true
+    security_review: false
+    change_window: "Standard — any business-hours maintenance window"
+    sla_hours: 48
+    notes: >
+      Medium-risk changes require a second firewall engineer to independently review
+      the recommendation and confirm it is correctly scoped.
+      Peer reviewer must not be the same engineer who analysed the ticket.
+      Implementation in standard business-hours window.
+
+  high:
+    approvers:
+      - "Requesting engineer's team lead"
+      - "Network security engineer (peer review)"
+      - "Security Operations (SecOps) team lead"
+    peer_review: true
+    security_review: true
+    change_window: >
+      Scheduled — pre-approved change window only. For OT/CIP-adjacent changes,
+      coordinate with OT Operations team before scheduling.
+    sla_hours: 72
+    notes: >
+      High-risk changes (OT-adjacent, internet exposure, or cross-domain to sensitive
+      zones) require SecOps sign-off in addition to peer review. Changes touching OT
+      environments must be coordinated with the OT Operations team to avoid impact
+      during operational periods. Do not implement during peak operational hours.
+
+  critical:
+    approvers:
+      - "Requesting engineer's team lead"
+      - "Network security engineer (peer review)"
+      - "Security Operations (SecOps) team lead"
+      - "CISO or designated security officer"
+    peer_review: true
+    security_review: true
+    change_window: >
+      Emergency or planned — requires CISO approval regardless of change window.
+      For CIP-H zones (this environment's regulated BES Cyber Systems zone), the change must be
+      documented as an Interactive Remote Access session per NERC CIP-005 before
+      implementation — substitute your own regime's equivalent documentation
+      requirement if deploying against a different zone/regime.
+      For Nuclear zone changes, coordinate with Nuclear Cyber Security programme.
+    sla_hours: 96
+    notes: >
+      Critical changes (regulated/most-sensitive zones such as CIP-H, Nuclear,
+      Financial Systems, or explicit exception to a block-all rule) require
+      CISO-level approval. Interactive Remote Access documentation (NERC CIP-005
+      in this environment) is mandatory for any change that creates or modifies
+      access to CIP-H zones.
+      All artefacts (recommendation, peer review, approvals) must be attached to
+      the ServiceNow ticket before implementation and retained per your
+      organization's audit-retention requirements (3 years under NERC CIP).
+      Risk acceptance by CISO is required if implementation cannot wait for the
+      next scheduled change window.

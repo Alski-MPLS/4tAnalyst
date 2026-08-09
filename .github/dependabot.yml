@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # One pip entry covering every package dir; grouped so a shared dependency
+  # bump (e.g. mcp, used by all seven packages) arrives as ONE PR, not seven.
+  # target-branch keeps dependabot in the development-first workflow — never
+  # straight into main.
+  - package-ecosystem: "pip"
+    directories:
+      - "/standards_mcp"
+      - "/fortimanager_mcp"
+      - "/feedback_mcp"
+      - "/intake_mcp"
+      - "/zone_mcp"
+      - "/planner"
+      - "/fwanalyst_server"
+    schedule:
+      interval: "weekly"
+    target-branch: "development"
+    groups:
+      pip-minor-and-patch:
+        update-types: ["minor", "patch"]
+    # Major bumps (e.g. mcp >=2.0.0) stay as individual PRs for manual review.
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "development"
+    groups:
+      actions-all:
+        patterns: ["*"]

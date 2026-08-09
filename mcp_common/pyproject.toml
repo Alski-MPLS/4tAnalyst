@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-common"
+version = "0.1.0"
+description = "Shared input validation, error sanitization, and log masking for 4tAnalyst's MCP packages"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["mcp_common"]

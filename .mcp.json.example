@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "4tanalyst": {
+      "type": "http",
+      "url": "https://<central-server>:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FW_ANALYST_CLIENT_TOKEN}"
+      }
+    }
+  }
+}

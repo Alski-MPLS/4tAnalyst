@@ -13,11 +13,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv pip install -e mcp_common/ -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
     -e intake_mcp/ -e zone_mcp/ -e fwanalyst_server/
 
-# Run the deterministic planner directly (no LLM, no server needed) —
-# fgplanner ships its own CLI; it is pulled in transitively as a
-# fwanalyst_server dependency, no local editable install needed
-uv run python -m fgplanner --src 10.1.2.3 --dst 10.9.8.7 --service tcp/8443 \
-    --firewall SITE01-FW01:OT-ADOM --ticket CHG0012345 [--json-only]
+# Recommended way to exercise the planner in this repo: the plan_change MCP
+# tool via fwanalyst_server (see below) — it registers client factories built
+# from this repo's credentials.yaml in fwanalyst_server/server.py, so
+# FortiManager/zone-policy connectivity is already wired.
+#
+# fgplanner also ships its own standalone CLI (no LLM, no server), but it
+# ships no default clients and reads no credentials.yaml (by design — see
+# fgplanner/clients.py in the fortigate-change-planner repo). Running
+# `python -m fgplanner` directly from within 4tAnalyst will fail with a
+# "no FortiManager client configured" error unless you first register your
+# own client factories per that package's docs; it is not a substitute for
+# the wired connectivity check below.
 
 # Unified server, stdio mode (development / debug)
 uv run python -m fwanalyst_server
@@ -267,7 +274,7 @@ zone_policy:
 
 ## Known limitations before production
 
-1. **Test FortiManager connectivity** — credentials added, not yet fully validated against live FMG (`python -m fgplanner` is the quickest end-to-end check)
+1. **Test FortiManager connectivity** — credentials added, not yet fully validated against live FMG (the `plan_change` MCP tool, via `uv run python -m fwanalyst_server`, is the quickest end-to-end check — it registers the client factories fgplanner needs from `credentials.yaml`; running `python -m fgplanner` directly is NOT a substitute unless you've separately wired your own client factories)
 2. **TLS** — no longer blocked on nginx: `fwanalyst_server/__main__.py` supports direct uvicorn TLS via `FW_ANALYST_SSL_CERTFILE`/`FW_ANALYST_SSL_KEYFILE` (see `docs/tls-setup.md`); still required before production in any regulated environment (NERC CIP, HIPAA, PCI-DSS, etc.) — pick direct uvicorn or nginx and enable it
 3. **AI inference path decision** — Bedrock vs. Anthropic direct vs. self-hosted (compliance implications for regulated/sensitive data differ)
 4. **Compliance team engagement** — longest lead time item for deployments touching regulated data (NERC CIP, HIPAA, PCI-DSS, or your organization's own data-classification policy)

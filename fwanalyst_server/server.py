@@ -20,6 +20,84 @@ from fwanalyst_server.context import token_label_var
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# fgplanner client wiring
+# ---------------------------------------------------------------------------
+#
+# fgplanner ships no default clients and reads no credentials file (see
+# fgplanner/clients.py) — callers must register zero-argument factories that
+# build a FortiManagerClient / ZonePolicyClient from this repo's own
+# credentials.yaml. This mirrors the deleted planner/engine.py
+# _default_fmg_client()/_default_zone_client() helpers. Registration is
+# idempotent (it's just an assignment) and happens lazily inside
+# plan_change() below, since that's the one code path guaranteed to run
+# regardless of entry point (stdio, HTTP, or a raw import).
+
+def _load_credentials() -> dict:
+    import os
+    from pathlib import Path
+
+    import yaml
+
+    repo_root = Path(__file__).parent.parent
+    creds_path = Path(os.getenv("CREDENTIALS_FILE", str(repo_root / "credentials.yaml")))
+    if creds_path.exists():
+        with open(creds_path, encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    return {}
+
+
+def _build_fmg_client():
+    from fgplanner.models import PlannerDataError
+    from fortimanager_mcp.client import FortiManagerClient
+
+    cfg = _load_credentials().get("fortimanager", {})
+    hosts = [(h.get("host", ""), h.get("api_key", "")) for h in cfg.get("hosts", [])]
+    hosts = [(h, k) for h, k in hosts if h and k]
+    if not hosts:
+        raise PlannerDataError("credentials", "fortimanager.hosts is empty in credentials.yaml")
+    primary = hosts[0]
+    secondary = hosts[1] if len(hosts) > 1 else ("", "")
+    client = FortiManagerClient(
+        primary_host=primary[0], primary_key=primary[1],
+        secondary_host=secondary[0], secondary_key=secondary[1],
+        port=int(cfg.get("port", 443)),
+        verify_ssl=bool(cfg.get("verify_ssl", True)),
+        version=str(cfg.get("version", "7.4")),
+    )
+    client.login()
+    return client
+
+
+def _build_zone_client():
+    from fgplanner.models import PlannerDataError
+    from zone_mcp.client import ZonePolicyClient
+
+    cfg = _load_credentials().get("zone_policy", {})
+    if not cfg.get("base_url") or not cfg.get("token"):
+        raise PlannerDataError("credentials", "zone_policy.base_url/token missing in credentials.yaml")
+    return ZonePolicyClient(
+        base_url=cfg["base_url"],
+        token=cfg["token"],
+        verify_ssl=bool(cfg.get("verify_ssl", False)),
+        timeout=float(cfg.get("timeout", 30.0)),
+    )
+
+
+def _register_fgplanner_clients() -> None:
+    """Register fwanalyst_server's client factories with fgplanner.
+
+    Safe to call repeatedly — registration is just an assignment, and the
+    factories aren't invoked until plan_change() actually needs a client, so
+    there's no I/O cost to calling this on every plan_change() invocation.
+    """
+    from fgplanner.clients import register_fmg_client_factory, register_zone_client_factory
+
+    register_fmg_client_factory(_build_fmg_client)
+    register_zone_client_factory(_build_zone_client)
+
+
 mcp = FastMCP(
     name="fw-analyst",
     instructions=(
@@ -109,6 +187,8 @@ def plan_change(
     """
     from fgplanner.engine import plan_change as _plan, to_report_payload
     from fgplanner.models import PlannerDataError, TargetFirewall
+
+    _register_fgplanner_clients()
 
     targets = []
     for raw in firewalls:

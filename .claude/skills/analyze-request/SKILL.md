@@ -94,8 +94,12 @@ Tell the engineer:
 > Report and CLI config saved to `output/<ticket-or-timestamp>/` — attach
 > both to the change ticket.
 
-(Alternatively, engineers can run the whole thing without Claude:
-`python -m fgplanner --src ... --dst ... --service ... --firewall DEVICE:ADOM`.)
+(fgplanner also ships its own standalone CLI, but it ships no default
+FortiManager/zone-policy clients and reads no credentials file by design —
+`fwanalyst_server/server.py` is what wires it to `credentials.yaml` here.
+Running `python -m fgplanner ...` directly from this repo without separately
+registering client factories will fail with "no FortiManager client
+configured"; the `plan_change` MCP tool above is the wired path.)
 
 ### Step 5 — Record the outcome
 After the engineer decides, use /record-decision (feedback tools) so the

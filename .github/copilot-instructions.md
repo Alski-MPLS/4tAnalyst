@@ -10,11 +10,15 @@ Short, actionable repository-specific guidance for Copilot/assistant sessions.
   - uv pip install -e mcp_common/ -e standards_mcp/ -e fortimanager_mcp/ -e feedback_mcp/ \
       -e intake_mcp/ -e zone_mcp/ -e fwanalyst_server/
 
-- Run the deterministic planner directly (no LLM, no server needed) — ships as
-  its own CLI in the external fortigate-change-planner package, pulled in
-  transitively as a fwanalyst_server dependency:
-  - uv run python -m fgplanner --src 10.1.2.3 --dst 10.9.8.7 --service tcp/8443 \
-      --firewall SITE01-FW01:OT-ADOM --ticket CHG0012345 [--json-only]
+- The deterministic planner is exercised through the `plan_change` MCP tool
+  in `fwanalyst_server` (see below) — `fwanalyst_server/server.py` registers
+  the FortiManager/zone-policy client factories fgplanner needs from
+  `credentials.yaml`. fgplanner also ships its own standalone CLI
+  (`python -m fgplanner`), but it deliberately ships no default clients and
+  reads no credentials file (see `fgplanner/clients.py` in the
+  fortigate-change-planner repo) — running it directly from within 4tAnalyst
+  without registering your own client factories first will fail with a
+  "no FortiManager client configured" error.
 
 - Run the unified server (development, stdio):
   - uv run python -m fwanalyst_server

@@ -57,6 +57,15 @@ python -m fgplanner --src "10.1.2.3, 10.1.2.4" --dst 10.9.8.7 \
     --ticket CHG0012345 [--src-group GRP_VENDOR_X]
 ```
 
+`fgplanner` deliberately ships no default FortiManager/zone-policy clients and
+reads no credentials file — you register your own client factories at
+startup (see `fgplanner/clients.py` in that repo). Inside this repo, that
+wiring is already done for you in `fwanalyst_server/server.py`, which builds
+factories from `credentials.yaml` and registers them before every
+`plan_change` call — so the supported way to exercise the planner here is via
+the `plan_change` MCP tool (`uv run python -m fwanalyst_server`), not by
+running `python -m fgplanner` unwired from this checkout.
+
 **What it does not do:** push changes to firewalls, bypass peer review, or make decisions. All operations are read-only against the management APIs.
 
 **Important limitations:**

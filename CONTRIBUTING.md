@@ -77,9 +77,12 @@ uv run python -m zone_mcp.server
 MCP_TRANSPORT=http FASTMCP_PORT=8000 FW_ANALYST_TOKEN=<token> \
     uv run python -m fwanalyst_server
 
-# deterministic planner, no server needed at all
-uv run python -m fgplanner --src 10.1.2.3 --dst 10.9.8.7 --service tcp/8443 \
-    --firewall FW1:root --json-only
+# deterministic planner, exercised via the wired plan_change MCP tool above —
+# fgplanner (the external package) ships its own standalone CLI too
+# (`python -m fgplanner ...`), but it ships no default clients and reads no
+# credentials.yaml by design (see fgplanner/clients.py); running it directly
+# from within this repo without registering your own client factories first
+# fails with "no FortiManager client configured".
 ```
 
 Each per-package MCP server still runs independently over stdio for development. Production serves a single aggregated endpoint (fwanalyst_server, port 8000) — when you add a tool, register it in fwanalyst_server/server.py and bump the expected count in tests/test_fwanalyst_auth.py.
